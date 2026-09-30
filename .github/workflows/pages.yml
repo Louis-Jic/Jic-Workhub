@@ -1,0 +1,49 @@
+name: Build GitHub Pages artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-artifact
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npm run check
+      - name: Build production Pages artifact
+        run: npm run build:production
+        env:
+          VITE_APP_ENV: production
+          VITE_FIREBASE_API_KEY: ${{ vars.PRODUCTION_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.PRODUCTION_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.PRODUCTION_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.PRODUCTION_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.PRODUCTION_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.PRODUCTION_FIREBASE_APP_ID }}
+          VITE_FIREBASE_FUNCTIONS_REGION: asia-east1
+          VITE_USE_FIREBASE_EMULATORS: "false"
+          VITE_APP_CHECK_SITE_KEY: ${{ vars.PRODUCTION_APP_CHECK_SITE_KEY }}
+          VITE_APP_CHECK_DEBUG: "false"
+      - run: npm run check:production-assets
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/production
