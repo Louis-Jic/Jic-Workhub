@@ -11,6 +11,9 @@
 - 公司管理帳號：由使用者在公司 Firebase 建立階段指定，不記錄於 repository。
 - 個人網域 `workhub.cwli.dev`、個人 repository 與個人 Firebase 在本階段保持不動。
 - 公司預定網域：`workhub.jimmore.com.tw`
+- 公司 production 保留 Google Cloud 專案：`Workhub`，Project ID
+  `workhub-508108`，Project number `1086883330549`。目前沒有已驗證證據可確認
+  Firebase 已加入或啟用，因此不得部署、寫入測試資料或作為 staging 使用。
 - 公司版先複製原有功能；新功能與流程優化安排在可重現、安全測試環境完成之後。
 - 不在本紀錄或程式庫保存 Google、GitHub、Firebase 密碼、私鑰、權杖或其他憑證。
 
@@ -53,7 +56,8 @@
 以下事項不得自行決定或執行：
 
 - 使用公司 Google 帳號登入或進行需要人工驗證的操作。
-- 建立 Firebase／Google Cloud 專案，以及決定正式 Project ID、地區與帳單帳戶。
+- 建立另一個 staging Firebase／Google Cloud 專案，以及決定其 Project ID、地區與帳單帳戶。
+- 在 production 保留專案 `workhub-508108` 加入或啟用 Firebase。
 - 啟用付費方案、連結或變更 Google Cloud Billing。
 - 匯出、複製或匯入正式 Firebase 資料。
 - 決定哪些員工帳號或歷史資料需要移轉。
@@ -77,7 +81,7 @@
 2. 部署 Rules、Indexes 與 Functions 到 staging。
 3. 建立合成測試員工與假勤資料，完成流程驗收。
 4. 列出需要優化或新增的功能，逐項在公司版開發。
-5. 建立公司 production Firebase，規劃正式資料移轉與切換日期。
+5. 經使用者核准後，在 production 保留專案 `workhub-508108` 啟用並設定 Firebase，規劃正式資料移轉與切換日期。
 
 ## 進度紀錄
 
@@ -90,3 +94,4 @@
 - 2026-09-30：唯讀審查提出 App Check 預設、build/deploy guard、Pages artifact 隔離與 Rules 覆蓋問題；已交回主要執行任務進行第二輪修正。
 - 2026-09-30：第二輪完整檢查通過：前端與政策 19 tests、Functions 16 tests、Rules Emulator 4 tests，皆為 0 失敗、0 skipped。
 - 2026-09-30：staging 與 production artifact 已分離；staging 無 CNAME 與舊 Project ID，合成 production artifact 通過資產、CNAME 與 legacy 掃描。Pages workflow 僅產生 artifact，不含部署工作。
+- 2026-09-30：使用者指定 Google Cloud 專案 `Workhub`（Project ID `workhub-508108`、Project number `1086883330549`）保留作未來 production；不得作 staging，且 Firebase 啟用狀態尚未驗證。

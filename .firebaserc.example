@@ -1,6 +1,6 @@
 {
   "projects": {
     "staging": "REPLACE_WITH_COMPANY_STAGING_PROJECT_ID",
-    "production": "REPLACE_WITH_COMPANY_PRODUCTION_PROJECT_ID"
+    "production": "workhub-508108"
   }
 }

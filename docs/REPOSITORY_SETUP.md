@@ -64,6 +64,19 @@ npm run dev
 - `.firebaserc.example` documents separate aliases without binding this checkout
   to a real Firebase project.
 
+### Reserved production project
+
+- Google Cloud project name: `Workhub`
+- Project ID: `workhub-508108`
+- Project number: `1086883330549`
+- Purpose: reserved for future company production only
+
+Firebase enablement has not been verified for this Cloud project. Do not deploy,
+write test data, attach staging workflows, or treat it as ready until the user
+separately approves Firebase enablement and production configuration. The real
+staging environment must use a different company Cloud/Firebase project; the
+committed `demo-jic-workhub-staging` Emulator configuration remains the default.
+
 Both staging and production builds reject the legacy project. The runtime accepts
 only a Project ID approved by the build, blocks Emulator configuration on public
 hosts, and requires an App Check site key for production builds. Functions App
@@ -95,7 +108,9 @@ Pages artifact but contains no deployment job. Staging is built into
 
 Before the first manual deployment:
 
-1. Create and validate the company staging and production Firebase projects.
+1. Create and validate a separate company staging Firebase project. Independently
+   confirm whether Firebase should be enabled in the reserved production Cloud
+   project `workhub-508108`.
 2. Store the documented `PRODUCTION_*` values as protected GitHub environment or
    repository variables. The workflow maps them to `VITE_*` only for
    `npm run build:production`; missing values fail the build.
@@ -108,6 +123,8 @@ Pages settings until those prerequisites are approved.
 ## Firebase project information still required
 
 - Globally unique staging Project ID; recommended candidate: `jic-workhub-staging`.
+- Confirmation and approval before enabling Firebase in production-reserved
+  `workhub-508108`; it must not be reused for staging.
 - Firestore location. Keep it immutable and aligned with Taiwan operations;
   `asia-east1` is the current Functions region, but the Firestore location must be
   selected explicitly when the database is created.
