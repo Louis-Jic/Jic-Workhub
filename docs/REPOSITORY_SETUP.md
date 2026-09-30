@@ -27,6 +27,34 @@ npm run check
 isolated Firestore Emulator for rules tests, and validates source and built asset
 paths. It does not use a Firebase account or a live Firebase project.
 
+## 本機啟動
+
+這個專案不能使用 VS Code Live Server。Live Server 直接提供 raw HTML，無法
+注入 Vite mode 與 `.env.staging`，因此安全防呆會顯示「環境設定已阻擋」。
+
+先完成安裝：
+
+```text
+npm ci
+npm ci --prefix functions
+```
+
+需要互動資料時，在第一個終端機啟動 Emulator（需要 Java 21）：
+
+```text
+npm run emulators
+```
+
+再於第二個終端機啟動 Vite：
+
+```text
+npm run dev
+```
+
+瀏覽器請開啟 `http://127.0.0.1:5500/`。測試只能使用合成帳號與合成假勤、
+打卡資料；不得匯入或複製正式員工資料。若只檢查畫面建置而不操作登入或
+資料，可以只執行 `npm run dev`，但依賴資料的頁面需要 Emulator 才能使用。
+
 ## Environment separation
 
 - `.env.staging` is committed and emulator-only.

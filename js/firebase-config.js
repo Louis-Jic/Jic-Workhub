@@ -61,6 +61,14 @@ export function validateFirebaseRuntime({
   return Object.freeze({ environment, isLocal, isPublishedHost, projectId });
 }
 
+export function firebaseSetupGuidance(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  if (new Set(["localhost", "127.0.0.1", "::1"]).has(host)) {
+    return "請停止 Live Server，從 Jic-Workhub 執行 npm run dev；需要互動資料時另啟 Firebase Emulator。";
+  }
+  return "請聯絡系統管理員確認 staging／production 設定。";
+}
+
 export const productConfig = Object.freeze({
   productName: "Jimmore WorkHub",
   edition: "attendance-security",

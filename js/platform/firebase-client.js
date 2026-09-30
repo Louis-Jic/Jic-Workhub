@@ -9,6 +9,7 @@ import {
 import {
   firebaseConfig,
   appSecurityConfig,
+  firebaseSetupGuidance,
   validateFirebaseRuntime
 } from "../firebase-config.js";
 
@@ -25,7 +26,8 @@ function renderConfigurationBlock(error) {
       <main style="max-width:720px;margin:64px auto;padding:24px;font-family:system-ui,sans-serif">
         <h1 style="font-size:1.5rem">環境設定已阻擋</h1>
         <p>${escapedMessage}</p>
-        <p>為避免誤用正式資料，本頁不會初始化 Firebase。請聯絡系統管理員確認 staging／production 設定。</p>
+        <p>為避免誤用正式資料，本頁不會初始化 Firebase。</p>
+        <p>${firebaseSetupGuidance(location.hostname)}</p>
       </main>`;
   };
   if (document.readyState === "loading") {

@@ -9,6 +9,7 @@
     "build:staging": "vite build --mode staging",
     "build:production": "vite build --mode production",
     "preview": "vite preview --host 127.0.0.1 --port 5500",
+    "emulators": "firebase emulators:start --project demo-jic-workhub-staging --only auth,firestore,functions",
     "test": "node --test test/*.test.js",
     "test:functions": "npm --prefix functions run test:unit",
     "test:rules": "firebase emulators:exec --project demo-jic-workhub-staging --only firestore \"npm --prefix functions run test:rules\"",
