@@ -1,0 +1,176 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function activeUser() {
+      return signedIn() && me().isActive != false;
+    }
+
+    function isAdmin() {
+      return signedIn() && me().role == 'admin' && me().isActive != false;
+    }
+
+    function isManager() {
+      return signedIn() && me().role == 'manager' && me().isActive != false;
+    }
+
+    function reviewsDepartment(department) {
+      return isAdmin() || (isManager() && me().department == department);
+    }
+
+    function reviewsEmployee(userId) {
+      return isAdmin() || (isManager()
+        && get(/databases/$(database)/documents/users/$(userId)).data.managerId == request.auth.uid);
+    }
+
+    function reviewsManager(managerId) {
+      return isAdmin() || (isManager() && managerId == request.auth.uid);
+    }
+
+    function owns(userId) {
+      return activeUser() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if owns(userId) || isAdmin()
+        || (isManager() && (
+          resource.data.department == me().department
+          || resource.data.get('managerId', '') == request.auth.uid
+        ));
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'employee'
+        && request.resource.data.department == ''
+        && request.resource.data.isActive == true
+        && request.resource.data.annualLeaveHours == 0
+        && request.resource.data.compensatoryLeaveHours == 0
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.keys().hasOnly([
+          'name', 'email', 'department', 'role', 'annualLeaveHours',
+          'compensatoryLeaveHours', 'isActive', 'workMode',
+          'attendanceRequired', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.workMode in ['office', 'field']
+        && request.resource.data.attendanceRequired == true;
+      allow update: if owns(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'phone', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /attendance/{recordId} {
+      allow read: if owns(resource.data.userId)
+        || reviewsDepartment(resource.data.department)
+        || reviewsEmployee(resource.data.userId);
+      allow write: if false;
+    }
+
+    match /attendanceDaily/{recordId} {
+      allow read: if owns(resource.data.userId)
+        || reviewsDepartment(resource.data.department)
+        || reviewsEmployee(resource.data.userId);
+      allow write: if false;
+    }
+
+    match /attendanceExceptions/{caseId} {
+      allow read: if owns(resource.data.userId)
+        || reviewsDepartment(resource.data.department)
+        || reviewsManager(resource.data.get('managerId', ''))
+        || reviewsEmployee(resource.data.userId);
+      allow write: if false;
+    }
+
+    match /passkeyEnrollmentRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /passkeyCredentials/{credentialId} {
+      allow read, write: if false;
+    }
+
+    match /securityChallenges/{challengeId} {
+      allow read, write: if false;
+    }
+
+    match /auditEvents/{eventId} {
+      allow read: if isAdmin() || (isManager() && resource.data.department == me().department);
+      allow write: if false;
+    }
+
+    match /workSites/{siteId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /fieldAssignments/{assignmentId} {
+      allow read: if owns(resource.data.userId) || isAdmin()
+        || (isManager() && resource.data.department == me().department);
+      allow write: if false;
+    }
+
+    match /leaveRequests/{requestId} {
+      allow read: if owns(resource.data.userId)
+        || reviewsDepartment(resource.data.department)
+        || reviewsManager(resource.data.get('managerId', ''))
+        || reviewsEmployee(resource.data.userId);
+      allow create: if owns(request.resource.data.userId)
+        && request.resource.data.department == me().department
+        && request.resource.data.managerId == me().managerId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approvedBy == ''
+        && request.resource.data.approvedAt == null
+        && request.resource.data.hours > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'userName', 'department', 'managerId', 'managerName',
+          'proxyUserId', 'proxyUserName', 'leaveType', 'shiftId', 'shiftName',
+          'workStart', 'workEnd', 'startTime', 'endTime', 'hours', 'reason',
+          'status', 'approvedBy', 'approvedAt', 'createdAt', 'updatedAt'
+        ]);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /overtimeRequests/{requestId} {
+      allow read: if owns(resource.data.userId)
+        || reviewsDepartment(resource.data.department)
+        || reviewsManager(resource.data.get('managerId', ''))
+        || reviewsEmployee(resource.data.userId);
+      allow create: if owns(request.resource.data.userId)
+        && request.resource.data.department == me().department
+        && request.resource.data.managerId == me().managerId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approvedBy == ''
+        && request.resource.data.approvedAt == null
+        && request.resource.data.hours > 0
+        && request.resource.data.keys().hasOnly([
+          'userId', 'userName', 'department', 'managerId', 'managerName',
+          'startTime', 'endTime', 'hours', 'location', 'reason',
+          'convertToCompTime', 'status', 'approvedBy', 'approvedAt',
+          'createdAt', 'updatedAt'
+        ]);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /workSettings/{settingId} {
+      allow read: if activeUser();
+      allow write: if false;
+    }
+
+    match /rateLimits/{limitId} {
+      allow read, write: if false;
+    }
+
+    match /punchGuards/{guardId} {
+      allow read, write: if false;
+    }
+  }
+}

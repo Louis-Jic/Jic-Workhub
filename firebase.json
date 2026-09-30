@@ -1,0 +1,18 @@
+{
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22",
+    "predeploy": ["node scripts/firebase-predeploy-guard.mjs"]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "singleProjectMode": true,
+    "auth": { "port": 9099 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": true }
+  }
+}

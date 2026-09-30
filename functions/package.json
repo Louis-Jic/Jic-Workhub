@@ -1,0 +1,25 @@
+{
+  "name": "jic-workhub-functions",
+  "private": true,
+  "main": "src/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "npm run test:unit",
+    "test:unit": "node --test test/config.test.js test/core.test.js test/admin-service.test.js",
+    "test:rules": "node --test test/rules.test.js",
+    "check:syntax": "node --check src/index.js && node --check src/core.js && node --check src/config.js && node --check src/lib/security-runtime.js && node --check src/lib/admin-service.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}
