@@ -45,6 +45,16 @@ npm ci --prefix functions
 npm run emulators
 ```
 
+Emulator 顯示所有服務已啟動後，在另一個終端機建立可重複使用的合成管理員：
+
+```text
+npm run emulators:seed
+```
+
+本機登入帳號為 `admin@jic-workhub.test`，密碼為 `LocalDemo123!`。這組帳密與
+資料只存在 `demo-jic-workhub-staging` Emulator；種子腳本會先驗證 Auth 與
+Firestore 主機皆為 localhost，避免誤寫正式 Firebase。
+
 再於第二個終端機啟動 Vite：
 
 ```text
