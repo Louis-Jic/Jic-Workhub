@@ -1,9 +1,14 @@
-Jimmore_logo.ico
 .vscode/
 functions/node_modules/
 node_modules/
 dist/
+dist-staging/
 .firebase/
+.env
+.env.local
+.env.*.local
+.env.production
+.firebaserc
 functions/.env.*
 !functions/.env.example
 firebase-debug.log
