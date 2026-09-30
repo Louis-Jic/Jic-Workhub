@@ -1,20 +1,29 @@
 {
-  "name": "jimmore-workhub-web",
+  "name": "jic-workhub-web",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5500",
-    "build": "vite build",
+    "dev": "vite --mode staging --host 127.0.0.1 --port 5500",
+    "build": "vite build --mode staging",
+    "build:staging": "vite build --mode staging",
+    "build:production": "vite build --mode production",
     "preview": "vite preview --host 127.0.0.1 --port 5500",
     "test": "node --test test/*.test.js",
-    "check": "npm run build && npm test && npm --prefix functions run lint && npm --prefix functions test"
+    "test:functions": "npm --prefix functions run test:unit",
+    "test:rules": "firebase emulators:exec --project demo-jic-workhub-staging --only firestore \"npm --prefix functions run test:rules\"",
+    "check:staging-assets": "node scripts/check-assets.mjs . && node scripts/check-assets.mjs dist/staging && node scripts/check-built-policy.mjs dist/staging staging",
+    "check:production-assets": "node scripts/check-assets.mjs dist/production && node scripts/check-built-policy.mjs dist/production production",
+    "deploy:check": "node scripts/firebase-deploy.mjs",
+    "deploy": "node scripts/firebase-deploy.mjs --execute",
+    "check": "npm run build && npm test && npm --prefix functions run check:syntax && npm run test:functions && npm run test:rules && npm run check:staging-assets"
   },
   "dependencies": {
     "bootstrap": "5.3.3",
     "firebase": "^11.0.0"
   },
   "devDependencies": {
+    "firebase-tools": "15.32.0",
     "vite": "^7.0.0"
   }
 }
