@@ -1,0 +1,16 @@
+Jimmore_logo.ico
+.vscode/
+functions/node_modules/
+node_modules/
+dist/
+.firebase/
+functions/.env.*
+!functions/.env.example
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+docs/screenshots/
+docs/*.docx
+docs/APP_CHECK_HOSTING_FIX_NOTES.md
+docs/firebase-cleanup-20260801/
+.prelaunch-backups/

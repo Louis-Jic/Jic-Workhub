@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登入 - Jimmore HR</title>
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body class="login-page">
+  <main class="login-card panel p-4">
+    <div class="d-flex align-items-center gap-2 mb-4">
+      <span class="brand-mark">
+        <img src="Jimmore_logo.ico" alt="Jimmore">
+      </span>
+      <div>
+        <h1 class="h4 mb-0">Jimmore HR</h1>
+        <div class="muted">人事出勤管理平台</div>
+      </div>
+    </div>
+    <div>
+      <section id="loginPane">
+        <form id="loginForm">
+          <div class="mb-3">
+            <label class="form-label" for="loginEmail">Email</label>
+            <input class="form-control" id="loginEmail" type="email" autocomplete="email" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="loginPassword">Password</label>
+            <input class="form-control" id="loginPassword" type="password" autocomplete="current-password" required>
+          </div>
+          <button class="btn btn-primary w-100">登入</button>
+        </form>
+      </section>
+    </div>
+  </main>
+  <div id="toastHost" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+  <script type="module" src="js/auth.js"></script>
+</body>
+</html>
