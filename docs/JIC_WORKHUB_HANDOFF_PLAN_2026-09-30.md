@@ -94,4 +94,5 @@
 - 2026-09-30：唯讀審查提出 App Check 預設、build/deploy guard、Pages artifact 隔離與 Rules 覆蓋問題；已交回主要執行任務進行第二輪修正。
 - 2026-09-30：第二輪完整檢查通過：前端與政策 19 tests、Functions 16 tests、Rules Emulator 4 tests，皆為 0 失敗、0 skipped。
 - 2026-09-30：staging 與 production artifact 已分離；staging 無 CNAME 與舊 Project ID，合成 production artifact 通過資產、CNAME 與 legacy 掃描。Pages workflow 僅產生 artifact，不含部署工作。
+- 2026-09-30：公司正式 Firebase 專案 `workhub-508108` 已啟用，Firestore 已匯入 11,801 筆文件，並建立 `Jimmore WorkHub Web`。Pages workflow 已補上受保護的手動部署工作，待 production variables 與 App Check 完成後執行。
 - 2026-09-30：使用者指定 Google Cloud 專案 `Workhub`（Project ID `workhub-508108`、Project number `1086883330549`）保留作未來 production；不得作 staging，且 Firebase 啟用狀態尚未驗證。

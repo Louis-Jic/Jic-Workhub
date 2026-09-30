@@ -100,31 +100,32 @@ ID confirmation. This command does not deploy.
 
 ## GitHub Pages
 
-The Pages workflow is manual-only (`workflow_dispatch`). It builds and uploads a
-Pages artifact but contains no deployment job. Staging is built into
-`dist/staging` without `CNAME`; production is built separately into
-`dist/production`, adds
+The Pages workflow is manual-only (`workflow_dispatch`). It verifies the full
+test suite, builds the production artifact, uploads it, and deploys it through
+the protected `github-pages` environment. Staging is built into `dist/staging`
+without `CNAME`; production is built separately into `dist/production`, adds
 `CNAME`, and receives an additional asset and legacy-project scan.
 
 Before the first manual deployment:
 
-1. Create and validate a separate company staging Firebase project. Independently
-   confirm whether Firebase should be enabled in the reserved production Cloud
-   project `workhub-508108`.
+1. Create and validate a separate company staging Firebase project. The approved
+   production project is `workhub-508108`, and its web app is
+   `Jimmore WorkHub Web` (`1:1086883330549:web:e2318b260d7277813408bc`).
 2. Store the documented `PRODUCTION_*` values as protected GitHub environment or
    repository variables. The workflow maps them to `VITE_*` only for
    `npm run build:production`; missing values fail the build.
 3. In repository Pages settings, select **GitHub Actions** as the source.
 4. Confirm the custom-domain DNS and HTTPS certificate separately.
 
-Running the workflow does not publish Pages. Do not add a deployment job or change
-Pages settings until those prerequisites are approved.
+Running the workflow publishes Pages after all checks pass. Keep the workflow
+manual until Authentication, Storage, Functions, Rules, App Check, and the final
+data synchronization have been validated.
 
 ## Firebase project information still required
 
 - Globally unique staging Project ID; recommended candidate: `jic-workhub-staging`.
-- Confirmation and approval before enabling Firebase in production-reserved
-  `workhub-508108`; it must not be reused for staging.
+- A separate staging Firebase project; production project `workhub-508108` must
+  not be reused for staging.
 - Firestore location. Keep it immutable and aligned with Taiwan operations;
   `asia-east1` is the current Functions region, but the Firestore location must be
   selected explicitly when the database is created.
