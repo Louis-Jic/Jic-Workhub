@@ -1105,6 +1105,11 @@ body {
   border-right: 0;
 }
 
+.calendar-cell.is-today {
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
 .calendar-event {
   display: flex;
   align-items: center;
@@ -1157,6 +1162,25 @@ body {
 
 .calendar-list-item:last-child {
   border-bottom: 0;
+}
+
+.calendar-list-item.is-today {
+  border: 2px solid #2563eb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #eff6ff;
+}
+
+.calendar-list-item.is-today .calendar-list-date {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.calendar-list-empty-day {
+  color: var(--jm-muted);
+  font-size: .9rem;
+  padding: 8px 10px;
 }
 
 .calendar-list-date {
@@ -1650,6 +1674,18 @@ body {
     flex-direction: column;
     align-items: flex-start !important;
     gap: 8px;
+  }
+
+  .calendar-title-with-controls {
+    position: sticky;
+    top: 79px;
+    z-index: 1010;
+    padding: 10px;
+    border: 1px solid var(--jm-border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .12);
+    backdrop-filter: blur(8px);
   }
 
   .calendar-title h2 {

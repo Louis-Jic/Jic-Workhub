@@ -69,8 +69,12 @@ qs("#nextMonthBtn").addEventListener("click", () => {
 });
 
 qs("#todayMonthBtn").addEventListener("click", () => {
-  visibleMonth = startOfMonth(new Date());
+  const today = new Date();
+  visibleMonth = startOfMonth(today);
   renderCalendarMonth();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => scrollToCalendarDate(today));
+  });
 });
 
 qs("#pageContent").addEventListener("click", (event) => {
@@ -116,26 +120,28 @@ function renderLeaveCalendar(year, month, monthStart, monthEnd, events) {
 
   for (let day = 1; day <= monthEnd.getDate(); day += 1) {
     const date = new Date(year, month, day);
+    const dateKey = calendarDateKey(date);
+    const isToday = sameDate(date, new Date());
     const dayEvents = events.filter((item) => isEventOnDate(item, date));
-    cells.push(`<div class="calendar-cell">
+    cells.push(`<div class="calendar-cell${isToday ? " is-today" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
       <div class="fw-semibold">${day}</div>
       ${dayEvents.map((item) => calendarEventHtml(item)).join("")}
     </div>`);
 
-    if (dayEvents.length) {
-      listItems.push(`<div class="calendar-list-item">
+    if (dayEvents.length || isToday) {
+      listItems.push(`<div class="calendar-list-item${isToday ? " is-today" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
         <div class="calendar-list-date">
           <span class="calendar-list-day">${day}</span>
           <span class="calendar-list-week">${days[date.getDay()]}</span>
         </div>
         <div class="calendar-list-events">
-          ${dayEvents.map((item) => `<button class="calendar-list-event" type="button" data-calendar-event-index="${allLeaves.indexOf(item)}">
+          ${dayEvents.length ? dayEvents.map((item) => `<button class="calendar-list-event" type="button" data-calendar-event-index="${allLeaves.indexOf(item)}">
             <div class="calendar-list-event-person">
               <strong>${escapeHtml(item.userName)}</strong>
               <span>${escapeHtml(leaveTypeLabel(item.leaveType))}</span>
             </div>
             <span class="calendar-event-arrow" aria-hidden="true">›</span>
-          </button>`).join("")}
+          </button>`).join("") : '<div class="calendar-list-empty-day">今天沒有已核准請假</div>'}
         </div>
       </div>`);
     }
@@ -145,6 +151,23 @@ function renderLeaveCalendar(year, month, monthStart, monthEnd, events) {
   qs("#calendarList").innerHTML = listItems.length
     ? listItems.join("")
     : `<div class="muted py-3">本月沒有已核准請假紀錄。</div>`;
+}
+
+function scrollToCalendarDate(date) {
+  const dateKey = calendarDateKey(date);
+  const mobileTarget = qs(`#calendarList [data-calendar-date="${dateKey}"]`);
+  const desktopTarget = qs(`#calendar [data-calendar-date="${dateKey}"]`);
+  const target = window.matchMedia("(max-width: 767px)").matches
+    ? mobileTarget || desktopTarget
+    : desktopTarget || mobileTarget;
+  target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+}
+
+function calendarDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function calendarEventHtml(item) {
