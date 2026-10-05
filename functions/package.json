@@ -7,9 +7,10 @@
   },
   "scripts": {
     "test": "npm run test:unit",
-    "test:unit": "node --test test/config.test.js test/core.test.js test/admin-service.test.js",
+    "test:unit": "node --test test/config.test.js test/core.test.js test/admin-service.test.js test/sync-production-to-emulator.test.js",
     "test:rules": "node --test test/rules.test.js",
     "seed:emulator": "node scripts/seed-emulator.js",
+    "sync:emulator:production": "node scripts/sync-production-to-emulator.js",
     "check:syntax": "node --check src/index.js && node --check src/core.js && node --check src/config.js && node --check src/lib/security-runtime.js && node --check src/lib/admin-service.js"
   },
   "dependencies": {
