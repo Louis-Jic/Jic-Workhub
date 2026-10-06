@@ -5,6 +5,7 @@ import fs from "node:fs";
 const adminSource = fs.readFileSync(new URL("../js/admin.js", import.meta.url), "utf8");
 const calendarSource = fs.readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
 const calendarHtml = fs.readFileSync(new URL("../calendar.html", import.meta.url), "utf8");
+const settingsHtml = fs.readFileSync(new URL("../admin/settings.html", import.meta.url), "utf8");
 const styles = fs.readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 const functionsSource = fs.readFileSync(new URL("../functions/src/index.js", import.meta.url), "utf8");
 
@@ -70,12 +71,21 @@ test("公司活動與請假使用不同顏色", () => {
 
 test("行事曆以不同色系標示休假日與補班日", () => {
   assert.match(functionsSource, /workCalendar:/);
+  assert.match(functionsSource, /days: calendarDays/);
   assert.match(calendarSource, /calendar-legend-rest-day">休假日・不用上班/);
-  assert.match(calendarSource, /calendar-day-status-rest">休假・不用上班/);
+  assert.match(calendarSource, /date\.getDay\(\) === 0 \|\| date\.getDay\(\) === 6/);
+  assert.match(calendarSource, /configured\?\.name \|\| \(isWeekend \? "週末" : "休假日"\)/);
   assert.match(calendarSource, /calendar-list-work-status-rest/);
   assert.match(calendarSource, /calendar-list-work-status-makeup/);
   assert.match(styles, /\.calendar-cell\.is-rest-day[\s\S]*?background:\s*#fff1f2/);
   assert.match(styles, /\.calendar-cell\.is-makeup-work-day[\s\S]*?background:\s*#f0fdf4/);
+});
+
+test("管理員可輸入休假原因並在員工行事曆顯示", () => {
+  assert.match(adminSource, /名稱／不用上班原因/);
+  assert.match(adminSource, /data-annual-day-edit/);
+  assert.match(calendarSource, /escapeHtml\(reason\).*不用上班/);
+  assert.match(settingsHtml, /admin\.js\?v=20261006-5/);
 });
 
 test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色", () => {
@@ -83,5 +93,5 @@ test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色",
   const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
   assert.ok(styleVersion);
   assert.equal(scriptVersion, styleVersion);
-  assert.equal(styleVersion, "20261006-4");
+  assert.equal(styleVersion, "20261006-5");
 });

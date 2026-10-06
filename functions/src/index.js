@@ -92,11 +92,12 @@ exports.getCompanyEvents = callable(async function getCompanyEvents(request) {
 
 exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
   await profileFor(request.auth.uid);
-  const [leaveSnap, attendanceSnap, settingsSnap, companyEventSnap] = await Promise.all([
+  const [leaveSnap, attendanceSnap, settingsSnap, companyEventSnap, annualCalendarSnap] = await Promise.all([
     db.collection("leaveRequests").where("status", "==", "approved").get(),
     db.collection("attendance").where("type", "==", "checkIn").get(),
     db.doc("workSettings/default").get(),
-    db.collection("companyEvents").get()
+    db.collection("companyEvents").get(),
+    db.collection("calendarYears").get()
   ]);
   const settings = settingsSnap.exists ? settingsSnap.data() : {};
   const toIso = (value) => {
@@ -142,11 +143,21 @@ exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
     .filter((event) => event.isActive !== false)
     .filter((event) => event.title && /^\d{4}-\d{2}-\d{2}$/.test(event.startDate)
       && /^\d{4}-\d{2}-\d{2}$/.test(event.endDate));
+  const calendarDays = annualCalendarSnap.docs
+    .flatMap((docSnap) => Array.isArray(docSnap.data()?.days) ? docSnap.data().days : [])
+    .map((item) => ({
+      date: cleanText(item?.date, 10),
+      name: cleanText(item?.name, 120),
+      type: cleanText(item?.type, 30)
+    }))
+    .filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(item.date))
+    .filter((item) => ["holiday", "company_rest", "makeup_workday"].includes(item.type));
   return {
     leaves,
     lateRecords,
     companyEvents,
     workCalendar: {
+      days: calendarDays,
       restDays: (Array.isArray(settings.holidayDates) ? settings.holidayDates : [])
         .map((date) => cleanText(date, 10))
         .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)),

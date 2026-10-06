@@ -2477,9 +2477,9 @@ async function renderSettings() {
         <h3 class="h6">新增休假日或補班日</h3>
         <div class="row g-2 align-items-end">
           <div class="col-md-3"><label class="form-label" for="annualDayDate">日期</label><input class="form-control" id="annualDayDate" type="date"></div>
-          <div class="col-md-4"><label class="form-label" for="annualDayName">名稱</label><input class="form-control" id="annualDayName" maxlength="120" placeholder="例如：國慶日或春節補班"></div>
+          <div class="col-md-4"><label class="form-label" for="annualDayName">名稱／不用上班原因</label><input class="form-control" id="annualDayName" maxlength="120" placeholder="例如：國慶日補假（因 10/10 國定假日）"><div class="form-text">此文字會顯示在員工休假行事曆。</div></div>
           <div class="col-md-3"><label class="form-label" for="annualDayType">類型</label><select class="form-select" id="annualDayType"><option value="holiday">國定／補假</option><option value="company_rest">公司休息日</option><option value="makeup_workday">補班日</option></select></div>
-          <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="annualDayAdd" type="button">加入</button></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="annualDayAdd" type="button">加入／更新</button></div>
         </div>
       </div>
       <div class="border rounded p-3 mb-3">
@@ -2645,7 +2645,7 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
     days.sort((a, b) => a.date.localeCompare(b.date));
     closures.sort((a, b) => a.date.localeCompare(b.date));
     qs("#annualDayList").innerHTML = days.length
-      ? `<div class="list-group">${days.map((item) => `<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><div><strong>${escapeHtml(item.date)}</strong><span class="badge ms-2 ${item.type === "makeup_workday" ? "text-bg-success" : item.type === "company_rest" ? "text-bg-secondary" : "text-bg-danger"}">${item.type === "makeup_workday" ? "補班日" : item.type === "company_rest" ? "公司休息日" : "國定／補假"}</span><div class="small muted mt-1">${escapeHtml(item.name || "未命名")}</div></div><button class="btn btn-outline-danger btn-sm" type="button" data-annual-day-remove="${escapeHtml(item.date)}">移除</button></div>`).join("")}</div>`
+      ? `<div class="list-group">${days.map((item) => `<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><div><strong>${escapeHtml(item.date)}</strong><span class="badge ms-2 ${item.type === "makeup_workday" ? "text-bg-success" : item.type === "company_rest" ? "text-bg-secondary" : "text-bg-danger"}">${item.type === "makeup_workday" ? "補班日" : item.type === "company_rest" ? "公司休息日" : "國定／補假"}</span><div class="small muted mt-1">${escapeHtml(item.name || "未命名")}</div></div><div class="d-flex gap-2"><button class="btn btn-outline-primary btn-sm" type="button" data-annual-day-edit="${escapeHtml(item.date)}">編輯</button><button class="btn btn-outline-danger btn-sm" type="button" data-annual-day-remove="${escapeHtml(item.date)}">移除</button></div></div>`).join("")}</div>`
       : '<div class="muted border rounded p-3">這個年度尚未設定休假日或補班日。</div>';
     qs("#annualClosureList").innerHTML = closures.length
       ? `<div class="list-group">${closures.map((item) => `<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><div><strong>${escapeHtml(item.date)} · ${escapeHtml(item.time)}</strong><div class="small muted mt-1">${escapeHtml(item.reason || "未填原因")}</div></div><button class="btn btn-outline-danger btn-sm" type="button" data-annual-closure-remove="${escapeHtml(item.date)}">移除</button></div>`).join("")}</div>`
@@ -2703,6 +2703,16 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
     render();
   });
   qs("#annualDayList").addEventListener("click", (event) => {
+    const editButton = event.target.closest("[data-annual-day-edit]");
+    if (editButton) {
+      const item = days.find((day) => day.date === editButton.dataset.annualDayEdit);
+      if (!item) return;
+      qs("#annualDayDate").value = item.date;
+      qs("#annualDayName").value = item.name || "";
+      qs("#annualDayType").value = item.type;
+      qs("#annualDayName").focus();
+      return;
+    }
     const button = event.target.closest("[data-annual-day-remove]");
     if (!button) return;
     days = days.filter((item) => item.date !== button.dataset.annualDayRemove);
