@@ -260,10 +260,9 @@ function calendarEventHtml(item) {
 
 function companyEventHtml(item) {
   const title = escapeHtml(item.title);
-  const category = escapeHtml(companyEventCategoryLabel(item.category));
   const colorClass = companyEventColorClass(item.category);
   return `<button class="calendar-event calendar-company-event ${colorClass}" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}" title="${escapeHtml(companyEventDetails(item))}" aria-label="查看公司活動 ${title}">
-    <span class="calendar-event-person"><strong>${category}</strong> ${title}</span>
+    <span class="calendar-event-person"><strong>${title}</strong></span>
     <span class="calendar-event-arrow" aria-hidden="true">›</span>
   </button>`;
 }
@@ -272,8 +271,7 @@ function companyEventListHtml(item) {
   const colorClass = companyEventColorClass(item.category);
   return `<button class="calendar-list-event calendar-company-event ${colorClass}" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}">
     <div class="calendar-list-event-person">
-      <strong>${escapeHtml(companyEventCategoryLabel(item.category))}</strong>
-      <span>${escapeHtml(item.title)}</span>
+      <strong>${escapeHtml(item.title)}</strong>
     </div>
     <span class="calendar-event-arrow" aria-hidden="true">›</span>
   </button>`;

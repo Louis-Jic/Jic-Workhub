@@ -69,6 +69,12 @@ test("公司活動與請假使用不同顏色", () => {
   assert.match(styles, /\.calendar-legend-holiday[\s\S]*?background:\s*#ffe4e6/);
 });
 
+test("行事曆活動卡片只顯示活動名稱，類型由色系區分", () => {
+  assert.match(calendarSource, /calendar-event-person"><strong>\$\{title\}<\/strong><\/span>/);
+  assert.match(calendarSource, /calendar-list-event-person[\s\S]*?<strong>\$\{escapeHtml\(item\.title\)\}<\/strong>/);
+  assert.doesNotMatch(calendarSource, /<strong>\$\{category\}<\/strong>/);
+});
+
 test("行事曆以不同色系標示休假日與補班日", () => {
   assert.match(functionsSource, /workCalendar:/);
   assert.match(functionsSource, /days: calendarDays/);
@@ -99,5 +105,5 @@ test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色",
   const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
   assert.ok(styleVersion);
   assert.equal(scriptVersion, styleVersion);
-  assert.equal(styleVersion, "20261006-7");
+  assert.equal(styleVersion, "20261006-8");
 });
