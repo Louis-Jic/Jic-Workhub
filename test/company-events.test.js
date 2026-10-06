@@ -68,10 +68,20 @@ test("公司活動與請假使用不同顏色", () => {
   assert.match(styles, /\.calendar-legend-holiday[\s\S]*?background:\s*#ffe4e6/);
 });
 
+test("行事曆以不同色系標示休假日與補班日", () => {
+  assert.match(functionsSource, /workCalendar:/);
+  assert.match(calendarSource, /calendar-legend-rest-day">休假日・不用上班/);
+  assert.match(calendarSource, /calendar-day-status-rest">休假・不用上班/);
+  assert.match(calendarSource, /calendar-list-work-status-rest/);
+  assert.match(calendarSource, /calendar-list-work-status-makeup/);
+  assert.match(styles, /\.calendar-cell\.is-rest-day[\s\S]*?background:\s*#fff1f2/);
+  assert.match(styles, /\.calendar-cell\.is-makeup-work-day[\s\S]*?background:\s*#f0fdf4/);
+});
+
 test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色", () => {
   const styleVersion = calendarHtml.match(/style\.css\?v=([^"']+)/)?.[1];
   const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
   assert.ok(styleVersion);
   assert.equal(scriptVersion, styleVersion);
-  assert.equal(styleVersion, "20261006-3");
+  assert.equal(styleVersion, "20261006-4");
 });

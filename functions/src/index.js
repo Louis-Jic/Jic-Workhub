@@ -146,6 +146,14 @@ exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
     leaves,
     lateRecords,
     companyEvents,
+    workCalendar: {
+      restDays: (Array.isArray(settings.holidayDates) ? settings.holidayDates : [])
+        .map((date) => cleanText(date, 10))
+        .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)),
+      makeupWorkDays: (Array.isArray(settings.makeupWorkDates) ? settings.makeupWorkDates : [])
+        .map((date) => cleanText(date, 10))
+        .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    },
     attendanceSettings: {
       lateGraceMinutes: Number(settings.lateGraceMinutes || 0),
       lunchStart: cleanText(settings.lunchStart, 5) || "12:00",
