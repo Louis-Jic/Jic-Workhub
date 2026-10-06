@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const adminSource = fs.readFileSync(new URL("../js/admin.js", import.meta.url), "utf8");
 const calendarSource = fs.readFileSync(new URL("../js/calendar.js", import.meta.url), "utf8");
+const calendarHtml = fs.readFileSync(new URL("../calendar.html", import.meta.url), "utf8");
 const styles = fs.readFileSync(new URL("../css/style.css", import.meta.url), "utf8");
 const functionsSource = fs.readFileSync(new URL("../functions/src/index.js", import.meta.url), "utf8");
 
@@ -42,4 +43,12 @@ test("公司活動與請假使用不同顏色", () => {
   assert.match(styles, /\.calendar-legend-training[\s\S]*?background:\s*#dcfce7/);
   assert.match(styles, /\.calendar-legend-meeting[\s\S]*?background:\s*#cffafe/);
   assert.match(styles, /\.calendar-legend-holiday[\s\S]*?background:\s*#ffe4e6/);
+});
+
+test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色", () => {
+  const styleVersion = calendarHtml.match(/style\.css\?v=([^"']+)/)?.[1];
+  const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
+  assert.ok(styleVersion);
+  assert.equal(scriptVersion, styleVersion);
+  assert.equal(styleVersion, "20261006-3");
 });
