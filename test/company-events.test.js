@@ -89,7 +89,8 @@ test("管理員可輸入休假原因並在員工行事曆顯示", () => {
   assert.match(adminSource, /data-annual-day-edit/);
   assert.match(adminSource, /await persistCalendar\(`\$\{item\.date\} 已更新並儲存`\)/);
   assert.doesNotMatch(adminSource, /此文字會顯示在員工休假行事曆/);
-  assert.match(calendarSource, /escapeHtml\(reason\).*不用上班/);
+  assert.match(calendarSource, /calendar-day-status-rest[\s\S]*?>\$\{escapeHtml\(reason\)\}<\/span>/);
+  assert.doesNotMatch(calendarSource, /title="\$\{escapeHtml\(reason\)\}・不用上班"/);
   assert.match(settingsHtml, /admin\.js\?v=20261006-6/);
 });
 
@@ -98,5 +99,5 @@ test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色",
   const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
   assert.ok(styleVersion);
   assert.equal(scriptVersion, styleVersion);
-  assert.equal(styleVersion, "20261006-6");
+  assert.equal(styleVersion, "20261006-7");
 });

@@ -219,7 +219,7 @@ function workDayInfo(date, dateKey) {
 
 function workDayStatusHtml({ isRestDay, isMakeupWorkDay, isWeekendRest, reason }) {
   if (isWeekendRest) return "";
-  if (isRestDay) return `<span class="calendar-day-status calendar-day-status-rest" title="${escapeHtml(reason)}・不用上班">${escapeHtml(reason)}・不用上班</span>`;
+  if (isRestDay) return `<span class="calendar-day-status calendar-day-status-rest" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span>`;
   if (isMakeupWorkDay) return `<span class="calendar-day-status calendar-day-status-makeup" title="${escapeHtml(reason)}・需要上班">${escapeHtml(reason)}</span>`;
   return "";
 }
