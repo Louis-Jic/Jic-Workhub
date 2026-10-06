@@ -15,6 +15,7 @@ function fakeFirestore(initial) {
   });
   function doc(path) {
     return {
+      id: path.split("/").at(-1),
       path,
       get: async () => snapshot(path),
       set: async (data, options = {}) => documents.set(path, options.merge ? { ...(documents.get(path) || {}), ...data } : data),
@@ -114,4 +115,80 @@ test("non-admin cannot permanently delete attendance", async () => {
     data: { recordId: "r1", reason: "刪除測試打卡" }
   }), /只有管理員/);
   assert.equal(db.documents.has("attendance/r1"), true);
+});
+
+test("admin can create, update and delete a company event", async () => {
+  const db = fakeFirestore({});
+  const handlers = handlersFor(db, { daily: [], guard: [] });
+
+  const created = await handlers.saveCompanyEvent({
+    auth: { uid: "actor" },
+    data: {
+      title: "2026-Q3 季會",
+      category: "company_activity",
+      startDate: "2026-10-12",
+      endDate: "2026-10-12",
+      allDay: true,
+      description: "第三季公司會議",
+      isActive: true
+    }
+  });
+
+  assert.equal(created.success, true);
+  assert.equal(created.event.title, "2026-Q3 季會");
+  assert.equal(db.documents.get(`companyEvents/${created.event.id}`).createdBy, "actor");
+
+  const updated = await handlers.saveCompanyEvent({
+    auth: { uid: "actor" },
+    data: {
+      eventId: created.event.id,
+      title: "2026-Q3 季會暨盤點說明",
+      category: "meeting",
+      startDate: "2026-10-12",
+      endDate: "2026-10-12",
+      allDay: false,
+      startTime: "09:30",
+      endTime: "11:30",
+      description: "更新後說明",
+      isActive: true
+    }
+  });
+
+  assert.equal(updated.event.category, "meeting");
+  assert.equal(updated.event.startTime, "09:30");
+  assert.equal(db.documents.get(`companyEvents/${created.event.id}`).title, "2026-Q3 季會暨盤點說明");
+
+  const deleted = await handlers.deleteCompanyEvent({
+    auth: { uid: "actor" },
+    data: { eventId: created.event.id }
+  });
+  assert.equal(deleted.success, true);
+  assert.equal(db.documents.has(`companyEvents/${created.event.id}`), false);
+});
+
+test("company events reject invalid dates and non-admin changes", async () => {
+  const db = fakeFirestore({});
+  const adminHandlers = handlersFor(db, { daily: [], guard: [] });
+  await assert.rejects(() => adminHandlers.saveCompanyEvent({
+    auth: { uid: "actor" },
+    data: {
+      title: "日期錯誤",
+      category: "inventory",
+      startDate: "2026-10-13",
+      endDate: "2026-10-12",
+      allDay: true
+    }
+  }), /結束日期不得早於開始日期/);
+
+  const managerHandlers = handlersFor(db, { daily: [], guard: [] }, "manager");
+  await assert.rejects(() => managerHandlers.saveCompanyEvent({
+    auth: { uid: "actor" },
+    data: {
+      title: "主管不可新增",
+      category: "other",
+      startDate: "2026-10-12",
+      endDate: "2026-10-12",
+      allDay: true
+    }
+  }), /只有管理員/);
 });

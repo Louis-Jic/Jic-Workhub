@@ -81,7 +81,26 @@ async function main() {
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
 
+  await db.doc("companyEvents/demo-2026-q3-meeting").set({
+    title: "2026-Q3 季會",
+    category: "company_activity",
+    startDate: "2026-10-12",
+    endDate: "2026-10-12",
+    allDay: true,
+    startTime: "",
+    endTime: "",
+    description: "第三季公司會議（本機測試資料）",
+    isActive: true,
+    createdBy: TEST_ACCOUNT.uid,
+    createdByName: TEST_ACCOUNT.displayName,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedBy: TEST_ACCOUNT.uid,
+    updatedByName: TEST_ACCOUNT.displayName,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+
   console.log("本機 Emulator 測試資料已建立。");
+  console.log("測試活動：2026-10-12 2026-Q3 季會");
   console.log(`帳號：${TEST_ACCOUNT.email}`);
   console.log(`密碼：${TEST_ACCOUNT.password}`);
   console.log("這組帳密只存在本機 Emulator，不可用於正式環境。");

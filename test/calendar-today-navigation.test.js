@@ -13,7 +13,7 @@ test("今天按鈕會在重新渲染後捲動到今天", () => {
 test("桌機與手機日期都有今天定位點", () => {
   const anchors = source.match(/data-calendar-date=/g) || [];
   assert.ok(anchors.length >= 2);
-  assert.match(source, /dayEvents\.length \|\| isToday/);
+  assert.match(source, /dayEvents\.length \|\| dayCompanyEvents\.length \|\| isToday/);
   assert.match(source, /aria-current="date"/);
 });
 

@@ -9,6 +9,14 @@ const ROLES = new Set(["employee", "manager", "admin"]);
 const WORK_MODES = new Set(["office", "field"]);
 const REQUEST_COLLECTIONS = new Set(["leaveRequests", "overtimeRequests"]);
 const REVIEW_STATUSES = new Set(["approved", "rejected"]);
+const COMPANY_EVENT_CATEGORIES = new Set([
+  "company_activity",
+  "inventory",
+  "training",
+  "meeting",
+  "holiday_notice",
+  "other"
+]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -32,6 +40,12 @@ function assertTime(value, label) {
   if (!TIME_PATTERN.test(value)) {
     throw new HttpsError("invalid-argument", `${label}格式必須為 HH:mm。`);
   }
+}
+
+function isCalendarDate(value) {
+  if (!DATE_PATTERN.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function timeMinutes(value) {
@@ -549,6 +563,95 @@ function createAdminHandlers({
     return { success: true };
   }
 
+  async function saveCompanyEvent(request) {
+    const admin = await profileFor(request.auth.uid);
+    requireAdmin(admin);
+    const input = request.data || {};
+    const eventId = cleanText(input.eventId, 128);
+    const title = cleanText(input.title, 120);
+    const category = cleanText(input.category, 40);
+    const startDate = cleanText(input.startDate, 10);
+    const endDate = cleanText(input.endDate, 10);
+    const allDay = input.allDay !== false;
+    const startTime = allDay ? "" : cleanText(input.startTime, 5);
+    const endTime = allDay ? "" : cleanText(input.endTime, 5);
+
+    if (!title) throw new HttpsError("invalid-argument", "活動標題為必填欄位。");
+    if (!COMPANY_EVENT_CATEGORIES.has(category)) {
+      throw new HttpsError("invalid-argument", "公司活動類型不正確。");
+    }
+    if (!isCalendarDate(startDate) || !isCalendarDate(endDate) || endDate < startDate) {
+      throw new HttpsError("invalid-argument", "活動日期格式錯誤，且結束日期不得早於開始日期。");
+    }
+    if (!allDay) {
+      assertTime(startTime, "活動開始時間");
+      assertTime(endTime, "活動結束時間");
+      if (startDate === endDate && timeMinutes(endTime) <= timeMinutes(startTime)) {
+        throw new HttpsError("invalid-argument", "同日活動的結束時間必須晚於開始時間。");
+      }
+    }
+
+    const collection = db.collection("companyEvents");
+    const ref = eventId ? collection.doc(eventId) : collection.doc();
+    const beforeSnap = await ref.get();
+    if (eventId && !beforeSnap.exists) {
+      throw new HttpsError("failed-precondition", "公司活動已不存在。");
+    }
+    const payload = {
+      title,
+      category,
+      startDate,
+      endDate,
+      allDay,
+      startTime,
+      endTime,
+      description: cleanText(input.description, 1000),
+      isActive: input.isActive !== false,
+      updatedBy: admin.id,
+      updatedByName: cleanText(admin.name || admin.email, 120),
+      updatedAt: FieldValue.serverTimestamp()
+    };
+    if (!beforeSnap.exists) {
+      payload.createdBy = admin.id;
+      payload.createdByName = cleanText(admin.name || admin.email, 120);
+      payload.createdAt = FieldValue.serverTimestamp();
+    }
+    await ref.set(payload, { merge: true });
+    await audit(beforeSnap.exists ? "company_event.updated" : "company_event.created", admin, {
+      eventId: ref.id,
+      before: beforeSnap.exists ? beforeSnap.data() : null,
+      event: { title, category, startDate, endDate, allDay, startTime, endTime }
+    });
+    return {
+      success: true,
+      event: {
+        id: ref.id,
+        title,
+        category,
+        startDate,
+        endDate,
+        allDay,
+        startTime,
+        endTime,
+        description: payload.description,
+        isActive: payload.isActive
+      }
+    };
+  }
+
+  async function deleteCompanyEvent(request) {
+    const admin = await profileFor(request.auth.uid);
+    requireAdmin(admin);
+    const eventId = cleanText(request.data?.eventId, 128);
+    if (!eventId) throw new HttpsError("invalid-argument", "缺少公司活動識別碼。");
+    const ref = db.collection("companyEvents").doc(eventId);
+    const beforeSnap = await ref.get();
+    if (!beforeSnap.exists) throw new HttpsError("failed-precondition", "公司活動已不存在。");
+    await ref.delete();
+    await audit("company_event.deleted", admin, { eventId, event: beforeSnap.data() });
+    return { success: true, eventId };
+  }
+
   return {
     createEmployeeAccount,
     updateEmployee,
@@ -556,6 +659,8 @@ function createAdminHandlers({
     recalculateOvertimeRequest,
     voidApprovedLeave,
     saveWorkSettings,
+    saveCompanyEvent,
+    deleteCompanyEvent,
     deleteAttendanceRecord
   };
 }

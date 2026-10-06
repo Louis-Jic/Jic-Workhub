@@ -51,6 +51,8 @@ exports.reviewHrRequest = callable(adminHandlers.reviewHrRequest);
 exports.recalculateOvertimeRequest = callable(adminHandlers.recalculateOvertimeRequest);
 exports.voidApprovedLeave = callable(adminHandlers.voidApprovedLeave);
 exports.saveWorkSettings = callable(adminHandlers.saveWorkSettings);
+exports.saveCompanyEvent = callable(adminHandlers.saveCompanyEvent);
+exports.deleteCompanyEvent = callable(adminHandlers.deleteCompanyEvent);
 exports.deleteAttendanceRecord = callable(adminHandlers.deleteAttendanceRecord);
 
 exports.getEmployeeDirectory = callable(async function getEmployeeDirectory(request) {
@@ -69,12 +71,25 @@ exports.getEmployeeDirectory = callable(async function getEmployeeDirectory(requ
   return { employees };
 });
 
+exports.getCompanyEvents = callable(async function getCompanyEvents(request) {
+  const admin = await profileFor(request.auth.uid);
+  requireAdmin(admin);
+  const snap = await db.collection("companyEvents").get();
+  return {
+    companyEvents: snap.docs
+      .map(publicCompanyEvent)
+      .filter((event) => event.title && event.startDate && event.endDate)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.title.localeCompare(b.title, "zh-Hant"))
+  };
+});
+
 exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
   await profileFor(request.auth.uid);
-  const [leaveSnap, attendanceSnap, settingsSnap] = await Promise.all([
+  const [leaveSnap, attendanceSnap, settingsSnap, companyEventSnap] = await Promise.all([
     db.collection("leaveRequests").where("status", "==", "approved").get(),
     db.collection("attendance").where("type", "==", "checkIn").get(),
-    db.doc("workSettings/default").get()
+    db.doc("workSettings/default").get(),
+    db.collection("companyEvents").get()
   ]);
   const settings = settingsSnap.exists ? settingsSnap.data() : {};
   const toIso = (value) => {
@@ -115,9 +130,15 @@ exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
       correctedByName: cleanText(record.correctedByName, 100)
     }))
     .filter((record) => record.timestamp);
+  const companyEvents = companyEventSnap.docs
+    .map(publicCompanyEvent)
+    .filter((event) => event.isActive !== false)
+    .filter((event) => event.title && /^\d{4}-\d{2}-\d{2}$/.test(event.startDate)
+      && /^\d{4}-\d{2}-\d{2}$/.test(event.endDate));
   return {
     leaves,
     lateRecords,
+    companyEvents,
     attendanceSettings: {
       lateGraceMinutes: Number(settings.lateGraceMinutes || 0),
       lunchStart: cleanText(settings.lunchStart, 5) || "12:00",
@@ -125,6 +146,22 @@ exports.getTeamCalendar = callable(async function getTeamCalendar(request) {
     }
   };
 }, { enforceAppCheck: false });
+
+function publicCompanyEvent(docSnap) {
+  const event = docSnap.data();
+  return {
+    id: cleanText(docSnap.id, 128),
+    title: cleanText(event.title, 120),
+    category: cleanText(event.category, 40),
+    startDate: cleanText(event.startDate, 10),
+    endDate: cleanText(event.endDate, 10),
+    allDay: event.allDay !== false,
+    startTime: cleanText(event.startTime, 5),
+    endTime: cleanText(event.endTime, 5),
+    description: cleanText(event.description, 1000),
+    isActive: event.isActive !== false
+  };
+}
 
 function normalizedShift(profile, settings) {
   const shifts = Array.isArray(settings.workShifts) ? settings.workShifts : [];

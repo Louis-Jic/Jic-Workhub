@@ -12,6 +12,7 @@ qs("#pageContent").innerHTML = `
       <div class="calendar-month-heading d-flex align-items-center gap-2 flex-wrap">
         <h2 class="h5 mb-0" id="calendarMonthTitle"></h2>
         <span class="badge text-bg-primary">已核准請假</span>
+        <span class="badge text-bg-warning">公司活動</span>
       </div>
       <div class="calendar-month-controls d-flex align-items-center gap-2 flex-wrap">
         <button class="btn btn-outline-secondary btn-sm" id="prevMonthBtn" type="button">上個月</button>
@@ -27,24 +28,19 @@ qs("#pageContent").innerHTML = `
     <dialog class="calendar-detail-dialog" id="calendarDetailDialog" aria-labelledby="calendarDetailTitle">
       <div class="calendar-detail-header">
         <div>
-          <div class="small muted">休假詳情</div>
+          <div class="small muted" id="calendarDetailKind">詳情</div>
           <h3 class="h5 mb-0" id="calendarDetailTitle"></h3>
         </div>
         <button class="calendar-detail-close" type="button" data-calendar-detail-close aria-label="關閉">×</button>
       </div>
-      <dl class="calendar-detail-grid mb-0">
-        <div><dt>部門</dt><dd id="calendarDetailDepartment"></dd></div>
-        <div><dt>假別</dt><dd id="calendarDetailType"></dd></div>
-        <div class="calendar-detail-wide"><dt>請假時間</dt><dd id="calendarDetailTime"></dd></div>
-        <div class="calendar-detail-wide"><dt>核准時數</dt><dd id="calendarDetailHours"></dd></div>
-      </dl>
+      <dl class="calendar-detail-grid mb-0" id="calendarDetailContent"></dl>
       <div class="calendar-detail-actions">
         <button class="btn btn-primary" type="button" data-calendar-detail-close>關閉</button>
       </div>
     </dialog>
   </div>`;
 
-let teamCalendar = { leaves: [] };
+let teamCalendar = { leaves: [], companyEvents: [] };
 try {
   teamCalendar = await callSecureFunction("getTeamCalendar");
 } catch (error) {
@@ -60,6 +56,7 @@ try {
   console.error("團隊行事曆資料載入失敗", error);
 }
 const allLeaves = Array.isArray(teamCalendar?.leaves) ? teamCalendar.leaves : [];
+const allCompanyEvents = Array.isArray(teamCalendar?.companyEvents) ? teamCalendar.companyEvents : [];
 
 qs("#prevMonthBtn").addEventListener("click", () => {
   visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
@@ -102,9 +99,14 @@ mobileCalendarQuery.addEventListener("change", () => {
 });
 
 qs("#pageContent").addEventListener("click", (event) => {
-  const eventButton = event.target.closest("[data-calendar-event-index]");
-  if (eventButton) {
-    openCalendarDetail(allLeaves[Number(eventButton.dataset.calendarEventIndex)]);
+  const leaveButton = event.target.closest("[data-calendar-leave-index]");
+  if (leaveButton) {
+    openLeaveDetail(allLeaves[Number(leaveButton.dataset.calendarLeaveIndex)]);
+    return;
+  }
+  const companyButton = event.target.closest("[data-company-event-index]");
+  if (companyButton) {
+    openCompanyEventDetail(allCompanyEvents[Number(companyButton.dataset.companyEventIndex)]);
     return;
   }
   if (event.target.closest("[data-calendar-detail-close]")) {
@@ -128,12 +130,17 @@ function renderCalendarMonth() {
     const end = toDate(item.endTime);
     return start <= monthEnd && end >= monthStart;
   });
+  const monthStartKey = calendarDateKey(monthStart);
+  const monthEndKey = calendarDateKey(monthEnd);
+  const companyEvents = allCompanyEvents.filter((item) => (
+    item.startDate <= monthEndKey && item.endDate >= monthStartKey
+  ));
 
   qs("#calendarMonthTitle").textContent = `${year} 年 ${month + 1} 月`;
-  renderLeaveCalendar(year, month, monthStart, monthEnd, events);
+  renderLeaveCalendar(year, month, monthStart, monthEnd, events, companyEvents);
 }
 
-function renderLeaveCalendar(year, month, monthStart, monthEnd, events) {
+function renderLeaveCalendar(year, month, monthStart, monthEnd, events, companyEvents) {
   const days = ["日", "一", "二", "三", "四", "五", "六"];
   const cells = days.map((day) => `<div class="calendar-head">${day}</div>`);
   const listItems = [];
@@ -147,25 +154,29 @@ function renderLeaveCalendar(year, month, monthStart, monthEnd, events) {
     const dateKey = calendarDateKey(date);
     const isToday = sameDate(date, new Date());
     const dayEvents = events.filter((item) => isEventOnDate(item, date));
+    const dayCompanyEvents = companyEvents.filter((item) => isCompanyEventOnDate(item, dateKey));
     cells.push(`<div class="calendar-cell${isToday ? " is-today" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
       <div class="fw-semibold">${day}</div>
+      ${dayCompanyEvents.map((item) => companyEventHtml(item)).join("")}
       ${dayEvents.map((item) => calendarEventHtml(item)).join("")}
     </div>`);
 
-    if (dayEvents.length || isToday) {
+    if (dayEvents.length || dayCompanyEvents.length || isToday) {
       listItems.push(`<div class="calendar-list-item${isToday ? " is-today" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
         <div class="calendar-list-date">
           <span class="calendar-list-day">${day}</span>
           <span class="calendar-list-week">${days[date.getDay()]}</span>
         </div>
         <div class="calendar-list-events">
-          ${dayEvents.length ? dayEvents.map((item) => `<button class="calendar-list-event" type="button" data-calendar-event-index="${allLeaves.indexOf(item)}">
+          ${dayCompanyEvents.map((item) => companyEventListHtml(item)).join("")}
+          ${dayEvents.map((item) => `<button class="calendar-list-event" type="button" data-calendar-leave-index="${allLeaves.indexOf(item)}">
             <div class="calendar-list-event-person">
               <strong>${escapeHtml(item.userName)}</strong>
               <span>${escapeHtml(leaveTypeLabel(item.leaveType))}</span>
             </div>
             <span class="calendar-event-arrow" aria-hidden="true">›</span>
-          </button>`).join("") : '<div class="calendar-list-empty-day">今天沒有已核准請假</div>'}
+          </button>`).join("")}
+          ${!dayEvents.length && !dayCompanyEvents.length ? '<div class="calendar-list-empty-day">今天沒有請假或公司活動</div>' : ""}
         </div>
       </div>`);
     }
@@ -174,7 +185,7 @@ function renderLeaveCalendar(year, month, monthStart, monthEnd, events) {
   qs("#calendar").innerHTML = cells.join("");
   qs("#calendarList").innerHTML = listItems.length
     ? listItems.join("")
-    : `<div class="muted py-3">本月沒有已核准請假紀錄。</div>`;
+    : `<div class="muted py-3">本月沒有已核准請假或公司活動。</div>`;
 }
 
 function scrollToCalendarDate(date) {
@@ -198,22 +209,77 @@ function calendarEventHtml(item) {
   const name = escapeHtml(item.userName);
   const leaveType = escapeHtml(leaveTypeLabel(item.leaveType));
   const details = escapeHtml(calendarEventDetails(item));
-  return `<button class="calendar-event" type="button" data-calendar-event-index="${allLeaves.indexOf(item)}" title="${details}" aria-label="查看 ${name} ${leaveType}的休假詳情">
+  return `<button class="calendar-event" type="button" data-calendar-leave-index="${allLeaves.indexOf(item)}" title="${details}" aria-label="查看 ${name} ${leaveType}的休假詳情">
     <span class="calendar-event-person"><strong>${name}</strong> ${leaveType}</span>
     <span class="calendar-event-arrow" aria-hidden="true">›</span>
   </button>`;
 }
 
-function openCalendarDetail(item) {
+function companyEventHtml(item) {
+  const title = escapeHtml(item.title);
+  const category = escapeHtml(companyEventCategoryLabel(item.category));
+  return `<button class="calendar-event calendar-company-event" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}" title="${escapeHtml(companyEventDetails(item))}" aria-label="查看公司活動 ${title}">
+    <span class="calendar-event-person"><strong>${category}</strong> ${title}</span>
+    <span class="calendar-event-arrow" aria-hidden="true">›</span>
+  </button>`;
+}
+
+function companyEventListHtml(item) {
+  return `<button class="calendar-list-event calendar-company-event" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}">
+    <div class="calendar-list-event-person">
+      <strong>${escapeHtml(companyEventCategoryLabel(item.category))}</strong>
+      <span>${escapeHtml(item.title)}</span>
+    </div>
+    <span class="calendar-event-arrow" aria-hidden="true">›</span>
+  </button>`;
+}
+
+function openLeaveDetail(item) {
   if (!item) return;
   const start = toDate(item.startTime);
   const end = toDate(item.endTime);
+  qs("#calendarDetailKind").textContent = "休假詳情";
   qs("#calendarDetailTitle").textContent = item.userName || "員工";
-  qs("#calendarDetailDepartment").textContent = item.department || "-";
-  qs("#calendarDetailType").textContent = leaveTypeLabel(item.leaveType);
-  qs("#calendarDetailTime").textContent = `${formatDateTime(start)} 至 ${formatDateTime(end)}`;
-  qs("#calendarDetailHours").textContent = formatLeaveHours(resolveLeaveHours(item)) || "未提供";
+  qs("#calendarDetailContent").innerHTML = `
+    <div><dt>部門</dt><dd>${escapeHtml(item.department || "-")}</dd></div>
+    <div><dt>假別</dt><dd>${escapeHtml(leaveTypeLabel(item.leaveType))}</dd></div>
+    <div class="calendar-detail-wide"><dt>請假時間</dt><dd>${escapeHtml(`${formatDateTime(start)} 至 ${formatDateTime(end)}`)}</dd></div>
+    <div class="calendar-detail-wide"><dt>核准時數</dt><dd>${escapeHtml(formatLeaveHours(resolveLeaveHours(item)) || "未提供")}</dd></div>`;
   qs("#calendarDetailDialog").showModal();
+}
+
+function openCompanyEventDetail(item) {
+  if (!item) return;
+  qs("#calendarDetailKind").textContent = companyEventCategoryLabel(item.category);
+  qs("#calendarDetailTitle").textContent = item.title || "公司活動";
+  qs("#calendarDetailContent").innerHTML = `
+    <div><dt>類型</dt><dd>${escapeHtml(companyEventCategoryLabel(item.category))}</dd></div>
+    <div><dt>時間</dt><dd>${escapeHtml(item.allDay !== false ? "全天" : `${item.startTime}～${item.endTime}`)}</dd></div>
+    <div class="calendar-detail-wide"><dt>活動日期</dt><dd>${escapeHtml(companyEventDateRange(item))}</dd></div>
+    <div class="calendar-detail-wide"><dt>公告說明</dt><dd>${escapeHtml(item.description || "未提供")}</dd></div>`;
+  qs("#calendarDetailDialog").showModal();
+}
+
+function companyEventCategoryLabel(category) {
+  return ({
+    company_activity: "公司活動",
+    inventory: "公司盤點",
+    training: "教育訓練",
+    meeting: "會議",
+    holiday_notice: "假日公告",
+    other: "其他"
+  })[category] || "公司活動";
+}
+
+function companyEventDateRange(item) {
+  return item.startDate === item.endDate
+    ? item.startDate
+    : `${item.startDate} 至 ${item.endDate}`;
+}
+
+function companyEventDetails(item) {
+  const time = item.allDay !== false ? "全天" : `${item.startTime}～${item.endTime}`;
+  return `${companyEventCategoryLabel(item.category)}｜${item.title}｜${companyEventDateRange(item)}｜${time}`;
 }
 
 function calendarEventDetails(item) {
@@ -284,6 +350,10 @@ function isEventOnDate(item, date) {
   const end = toDate(item.endTime);
   return start <= new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59)
     && end >= new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isCompanyEventOnDate(item, dateKey) {
+  return item.startDate <= dateKey && item.endDate >= dateKey;
 }
 
 function startOfMonth(date) {

@@ -2419,10 +2419,14 @@ async function renderSettings() {
     content.innerHTML = `<div class="alert alert-warning">只有管理員可以修改系統設定。</div>`;
     return;
   }
-  const settings = await getWorkSettings();
+  const [settings, companyEventData] = await Promise.all([
+    getWorkSettings(),
+    callSecureFunction("getCompanyEvents")
+  ]);
   const shifts = normalizeWorkShifts(settings);
+  const companyEvents = Array.isArray(companyEventData?.companyEvents) ? companyEventData.companyEvents : [];
   content.innerHTML = `
-    <form class="panel p-3" id="settingsForm">
+    <form class="panel p-3 mb-4" id="settingsForm">
       <h2 class="h5 mb-3">班別設定</h2>
       <div class="row g-3">
         ${shifts.map((shift, index) => `<div class="col-lg-4">
@@ -2454,7 +2458,70 @@ async function renderSettings() {
         </div>
       </div>
       <button class="btn btn-primary mt-3">儲存設定</button>
-    </form>`;
+    </form>
+    <section class="panel p-3" aria-labelledby="companyEventSectionTitle">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h2 class="h5 mb-1" id="companyEventSectionTitle">公司活動與公告</h2>
+          <p class="muted mb-0">活動會以橘色顯示在休假行事曆，不會自動影響出勤或薪資計算。</p>
+        </div>
+        <span class="badge text-bg-warning">僅管理員可編輯</span>
+      </div>
+      <form id="companyEventForm">
+        <input id="companyEventId" type="hidden">
+        <div class="row g-3">
+          <div class="col-lg-6">
+            <label class="form-label" for="companyEventTitle">活動標題</label>
+            <input class="form-control" id="companyEventTitle" maxlength="120" placeholder="例如：2026-Q3 季會" required>
+          </div>
+          <div class="col-lg-3">
+            <label class="form-label" for="companyEventCategory">活動類型</label>
+            <select class="form-select" id="companyEventCategory" required>
+              ${companyEventCategoryOptions("company_activity")}
+            </select>
+          </div>
+          <div class="col-lg-3 d-flex align-items-end">
+            <div class="form-check mb-2">
+              <input class="form-check-input" id="companyEventAllDay" type="checkbox" checked>
+              <label class="form-check-label" for="companyEventAllDay">全天活動</label>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="companyEventStartDate">開始日期</label>
+            <input class="form-control" id="companyEventStartDate" type="date" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label" for="companyEventEndDate">結束日期</label>
+            <input class="form-control" id="companyEventEndDate" type="date" required>
+          </div>
+          <div class="col-md-3" data-company-event-time-field>
+            <label class="form-label" for="companyEventStartTime">開始時間</label>
+            <input class="form-control" id="companyEventStartTime" type="time" value="09:00" disabled>
+          </div>
+          <div class="col-md-3" data-company-event-time-field>
+            <label class="form-label" for="companyEventEndTime">結束時間</label>
+            <input class="form-control" id="companyEventEndTime" type="time" value="18:00" disabled>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="companyEventDescription">公告說明</label>
+            <textarea class="form-control" id="companyEventDescription" rows="3" maxlength="1000" placeholder="可填寫集合地點、盤點範圍或注意事項"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" id="companyEventActive" type="checkbox" checked>
+              <label class="form-check-label" for="companyEventActive">顯示在員工行事曆</label>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-warning" type="submit" id="companyEventSubmitBtn">新增公司活動</button>
+          <button class="btn btn-outline-secondary" type="button" id="companyEventCancelBtn" hidden>取消編輯</button>
+        </div>
+      </form>
+      <hr>
+      <h3 class="h6 mb-3">已建立的公司活動</h3>
+      <div id="companyEventList" aria-live="polite"></div>
+    </section>`;
 
   qs("#settingsForm").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2481,6 +2548,156 @@ async function renderSettings() {
       showToast(`設定儲存失敗：${error.message}`, "danger");
     }
   });
+  setupCompanyEventAdmin(companyEvents);
+}
+
+const COMPANY_EVENT_LABELS = Object.freeze({
+  company_activity: "公司活動",
+  inventory: "公司盤點",
+  training: "教育訓練",
+  meeting: "會議",
+  holiday_notice: "假日公告",
+  other: "其他"
+});
+
+function companyEventCategoryOptions(selected) {
+  return Object.entries(COMPANY_EVENT_LABELS)
+    .map(([value, label]) => `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`)
+    .join("");
+}
+
+function setupCompanyEventAdmin(initialEvents) {
+  let events = [...initialEvents].sort(compareCompanyEvents);
+  const form = qs("#companyEventForm");
+  const allDay = qs("#companyEventAllDay");
+  const startTime = qs("#companyEventStartTime");
+  const endTime = qs("#companyEventEndTime");
+  const today = todayKey();
+  qs("#companyEventStartDate").value = today;
+  qs("#companyEventEndDate").value = today;
+
+  function updateTimeFields() {
+    startTime.disabled = allDay.checked;
+    endTime.disabled = allDay.checked;
+    document.querySelectorAll("[data-company-event-time-field]").forEach((field) => {
+      field.classList.toggle("opacity-50", allDay.checked);
+    });
+  }
+
+  function resetForm() {
+    form.reset();
+    qs("#companyEventId").value = "";
+    qs("#companyEventStartDate").value = today;
+    qs("#companyEventEndDate").value = today;
+    qs("#companyEventStartTime").value = "09:00";
+    qs("#companyEventEndTime").value = "18:00";
+    qs("#companyEventSubmitBtn").textContent = "新增公司活動";
+    qs("#companyEventCancelBtn").hidden = true;
+    updateTimeFields();
+  }
+
+  function renderList() {
+    qs("#companyEventList").innerHTML = events.length
+      ? `<div class="company-event-admin-list">${events.map(companyEventAdminRow).join("")}</div>`
+      : '<div class="muted py-3">尚未建立公司活動。</div>';
+  }
+
+  allDay.addEventListener("change", updateTimeFields);
+  qs("#companyEventCancelBtn").addEventListener("click", resetForm);
+  qs("#companyEventList").addEventListener("click", async (event) => {
+    const editButton = event.target.closest("[data-company-event-edit]");
+    const deleteButton = event.target.closest("[data-company-event-delete]");
+    const id = editButton?.dataset.companyEventEdit || deleteButton?.dataset.companyEventDelete;
+    const selected = events.find((item) => item.id === id);
+    if (!selected) return;
+    if (editButton) {
+      qs("#companyEventId").value = selected.id;
+      qs("#companyEventTitle").value = selected.title;
+      qs("#companyEventCategory").value = selected.category;
+      qs("#companyEventStartDate").value = selected.startDate;
+      qs("#companyEventEndDate").value = selected.endDate;
+      qs("#companyEventAllDay").checked = selected.allDay !== false;
+      qs("#companyEventStartTime").value = selected.startTime || "09:00";
+      qs("#companyEventEndTime").value = selected.endTime || "18:00";
+      qs("#companyEventDescription").value = selected.description || "";
+      qs("#companyEventActive").checked = selected.isActive !== false;
+      qs("#companyEventSubmitBtn").textContent = "儲存活動修改";
+      qs("#companyEventCancelBtn").hidden = false;
+      updateTimeFields();
+      form.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (!window.confirm(`確定要刪除「${selected.title}」嗎？刪除後將不再顯示於行事曆。`)) return;
+    try {
+      await callSecureFunction("deleteCompanyEvent", { eventId: selected.id });
+      events = events.filter((item) => item.id !== selected.id);
+      renderList();
+      if (qs("#companyEventId").value === selected.id) resetForm();
+      showToast("公司活動已刪除", "success");
+    } catch (error) {
+      showToast(`公司活動刪除失敗：${error.message}`, "danger");
+    }
+  });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      eventId: qs("#companyEventId").value,
+      title: qs("#companyEventTitle").value,
+      category: qs("#companyEventCategory").value,
+      startDate: qs("#companyEventStartDate").value,
+      endDate: qs("#companyEventEndDate").value,
+      allDay: allDay.checked,
+      startTime: startTime.value,
+      endTime: endTime.value,
+      description: qs("#companyEventDescription").value,
+      isActive: qs("#companyEventActive").checked
+    };
+    if (payload.endDate < payload.startDate) {
+      showToast("活動結束日期不得早於開始日期", "warning");
+      return;
+    }
+    try {
+      const result = await callSecureFunction("saveCompanyEvent", payload);
+      events = events.filter((item) => item.id !== result.event.id);
+      events.push(result.event);
+      events.sort(compareCompanyEvents);
+      renderList();
+      resetForm();
+      showToast(payload.eventId ? "公司活動已更新" : "公司活動已新增", "success");
+    } catch (error) {
+      showToast(`公司活動儲存失敗：${error.message}`, "danger");
+    }
+  });
+
+  updateTimeFields();
+  renderList();
+}
+
+function compareCompanyEvents(a, b) {
+  return a.startDate.localeCompare(b.startDate) || a.title.localeCompare(b.title, "zh-Hant");
+}
+
+function companyEventAdminRow(item) {
+  const dateRange = item.startDate === item.endDate
+    ? item.startDate
+    : `${item.startDate} ～ ${item.endDate}`;
+  const time = item.allDay !== false ? "全天" : `${item.startTime}～${item.endTime}`;
+  return `<article class="company-event-admin-row">
+    <div class="company-event-admin-main">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span class="badge text-bg-warning">${escapeHtml(COMPANY_EVENT_LABELS[item.category] || "其他")}</span>
+        ${item.isActive === false ? '<span class="badge text-bg-secondary">暫停顯示</span>' : ""}
+      </div>
+      <div class="small muted mt-1">${escapeHtml(dateRange)} · ${escapeHtml(time)}</div>
+      ${item.description ? `<div class="small mt-2">${escapeHtml(item.description)}</div>` : ""}
+    </div>
+    <div class="company-event-admin-actions">
+      <button class="btn btn-outline-primary btn-sm" type="button" data-company-event-edit="${escapeHtml(item.id)}">編輯</button>
+      <button class="btn btn-outline-danger btn-sm" type="button" data-company-event-delete="${escapeHtml(item.id)}">刪除</button>
+    </div>
+  </article>`;
 }
 
 function normalizeWorkShifts(settings) {
