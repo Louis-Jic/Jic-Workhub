@@ -23,3 +23,13 @@ test("手機月份工具列固定在導覽列下方", () => {
     /\.calendar-title-with-controls\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*79px;/
   );
 });
+
+test("手機滑離月份工具列後仍提供固定的今天按鈕", () => {
+  assert.match(source, /id="mobileTodayJumpBtn"[\s\S]*?>[\s\S]*?今天/);
+  assert.match(source, /new IntersectionObserver\([\s\S]*?updateMobileTodayJump\(entry\.isIntersecting\)/);
+  assert.match(source, /#mobileTodayJumpBtn"\)\.addEventListener\("click", jumpToToday\)/);
+  assert.match(
+    styles,
+    /\.calendar-mobile-today-jump:not\(\[hidden\]\)\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?bottom:/
+  );
+});

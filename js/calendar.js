@@ -21,6 +21,9 @@ qs("#pageContent").innerHTML = `
     </div>
     <div class="calendar-grid" id="calendar"></div>
     <div class="calendar-list" id="calendarList"></div>
+    <button class="btn btn-primary calendar-mobile-today-jump" id="mobileTodayJumpBtn" type="button" hidden>
+      今天
+    </button>
     <dialog class="calendar-detail-dialog" id="calendarDetailDialog" aria-labelledby="calendarDetailTitle">
       <div class="calendar-detail-header">
         <div>
@@ -68,13 +71,34 @@ qs("#nextMonthBtn").addEventListener("click", () => {
   renderCalendarMonth();
 });
 
-qs("#todayMonthBtn").addEventListener("click", () => {
+function jumpToToday() {
   const today = new Date();
   visibleMonth = startOfMonth(today);
   renderCalendarMonth();
   requestAnimationFrame(() => {
     requestAnimationFrame(() => scrollToCalendarDate(today));
   });
+}
+
+qs("#todayMonthBtn").addEventListener("click", jumpToToday);
+qs("#mobileTodayJumpBtn").addEventListener("click", jumpToToday);
+
+const mobileCalendarQuery = window.matchMedia("(max-width: 640px)");
+const calendarToolbar = qs(".calendar-title-with-controls");
+const mobileTodayJump = qs("#mobileTodayJumpBtn");
+
+function updateMobileTodayJump(toolbarVisible) {
+  mobileTodayJump.hidden = !mobileCalendarQuery.matches || toolbarVisible;
+}
+
+const calendarToolbarObserver = new IntersectionObserver(([entry]) => {
+  updateMobileTodayJump(entry.isIntersecting);
+}, { threshold: 0.25 });
+
+calendarToolbarObserver.observe(calendarToolbar);
+mobileCalendarQuery.addEventListener("change", () => {
+  const toolbarRect = calendarToolbar.getBoundingClientRect();
+  updateMobileTodayJump(toolbarRect.bottom > 79 && toolbarRect.top < window.innerHeight);
 });
 
 qs("#pageContent").addEventListener("click", (event) => {
