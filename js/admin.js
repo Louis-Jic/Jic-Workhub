@@ -36,6 +36,14 @@ const titleMap = {
   overtime: ["加班審核", "核准或駁回加班申請"],
   settings: ["系統設定", "設定上下班、午休與遲到寬限"]
 };
+const COMPANY_EVENT_LABELS = Object.freeze({
+  company_activity: "公司活動",
+  inventory: "公司盤點",
+  training: "教育訓練",
+  meeting: "會議",
+  holiday_notice: "假日公告",
+  other: "其他"
+});
 const [title, subtitle] = titleMap[mode] || titleMap.home;
 mountPageShell(title, subtitle);
 const adminProfile = await requireAuth({ roles: ["manager", "admin"] });
@@ -2550,15 +2558,6 @@ async function renderSettings() {
   });
   setupCompanyEventAdmin(companyEvents);
 }
-
-const COMPANY_EVENT_LABELS = Object.freeze({
-  company_activity: "公司活動",
-  inventory: "公司盤點",
-  training: "教育訓練",
-  meeting: "會議",
-  holiday_notice: "假日公告",
-  other: "其他"
-});
 
 function companyEventCategoryOptions(selected) {
   return Object.entries(COMPANY_EVENT_LABELS)

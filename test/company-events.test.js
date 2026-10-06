@@ -14,6 +14,14 @@ test("系統設定提供管理員公司活動新增、編輯與刪除功能", ()
   assert.match(adminSource, /公司活動與公告/);
 });
 
+test("公司活動類型在系統設定渲染前完成初始化", () => {
+  const labelsIndex = adminSource.indexOf("const COMPANY_EVENT_LABELS");
+  const settingsDispatchIndex = adminSource.indexOf('if (mode === "settings") await renderSettings()');
+  assert.ok(labelsIndex >= 0);
+  assert.ok(settingsDispatchIndex >= 0);
+  assert.ok(labelsIndex < settingsDispatchIndex);
+});
+
 test("團隊行事曆回傳並顯示公司活動", () => {
   assert.match(functionsSource, /db\.collection\("companyEvents"\)\.get\(\)/);
   assert.match(functionsSource, /companyEvents,/);
