@@ -11,8 +11,12 @@ qs("#pageContent").innerHTML = `
     <div class="calendar-title calendar-title-with-controls d-flex justify-content-between align-items-center mb-3">
       <div class="calendar-month-heading d-flex align-items-center gap-2 flex-wrap">
         <h2 class="h5 mb-0" id="calendarMonthTitle"></h2>
-        <span class="badge text-bg-primary">已核准請假</span>
-        <span class="badge text-bg-warning">公司活動</span>
+        <span class="badge calendar-legend calendar-legend-leave">已核准請假</span>
+        <span class="badge calendar-legend calendar-legend-company">公司活動</span>
+        <span class="badge calendar-legend calendar-legend-inventory">公司盤點</span>
+        <span class="badge calendar-legend calendar-legend-training">教育訓練</span>
+        <span class="badge calendar-legend calendar-legend-meeting">會議</span>
+        <span class="badge calendar-legend calendar-legend-holiday">假日公告</span>
       </div>
       <div class="calendar-month-controls d-flex align-items-center gap-2 flex-wrap">
         <button class="btn btn-outline-secondary btn-sm" id="prevMonthBtn" type="button">上個月</button>
@@ -218,14 +222,16 @@ function calendarEventHtml(item) {
 function companyEventHtml(item) {
   const title = escapeHtml(item.title);
   const category = escapeHtml(companyEventCategoryLabel(item.category));
-  return `<button class="calendar-event calendar-company-event" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}" title="${escapeHtml(companyEventDetails(item))}" aria-label="查看公司活動 ${title}">
+  const colorClass = companyEventColorClass(item.category);
+  return `<button class="calendar-event calendar-company-event ${colorClass}" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}" title="${escapeHtml(companyEventDetails(item))}" aria-label="查看公司活動 ${title}">
     <span class="calendar-event-person"><strong>${category}</strong> ${title}</span>
     <span class="calendar-event-arrow" aria-hidden="true">›</span>
   </button>`;
 }
 
 function companyEventListHtml(item) {
-  return `<button class="calendar-list-event calendar-company-event" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}">
+  const colorClass = companyEventColorClass(item.category);
+  return `<button class="calendar-list-event calendar-company-event ${colorClass}" type="button" data-company-event-index="${allCompanyEvents.indexOf(item)}">
     <div class="calendar-list-event-person">
       <strong>${escapeHtml(companyEventCategoryLabel(item.category))}</strong>
       <span>${escapeHtml(item.title)}</span>
@@ -269,6 +275,17 @@ function companyEventCategoryLabel(category) {
     holiday_notice: "假日公告",
     other: "其他"
   })[category] || "公司活動";
+}
+
+function companyEventColorClass(category) {
+  return ({
+    company_activity: "calendar-company-event-activity",
+    inventory: "calendar-company-event-inventory",
+    training: "calendar-company-event-training",
+    meeting: "calendar-company-event-meeting",
+    holiday_notice: "calendar-company-event-holiday",
+    other: "calendar-company-event-other"
+  })[category] || "calendar-company-event-other";
 }
 
 function companyEventDateRange(item) {

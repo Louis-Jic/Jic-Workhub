@@ -31,7 +31,15 @@ test("團隊行事曆回傳並顯示公司活動", () => {
 });
 
 test("公司活動與請假使用不同顏色", () => {
-  assert.match(calendarSource, /text-bg-primary">已核准請假/);
-  assert.match(calendarSource, /text-bg-warning">公司活動/);
-  assert.match(styles, /\.calendar-event\.calendar-company-event[\s\S]*?background:\s*#ffedd5/);
+  assert.match(calendarSource, /calendar-legend-leave">已核准請假/);
+  assert.match(calendarSource, /calendar-legend-company">公司活動/);
+  assert.match(calendarSource, /calendar-company-event-inventory/);
+  assert.match(calendarSource, /calendar-company-event-training/);
+  assert.match(calendarSource, /calendar-company-event-meeting/);
+  assert.match(calendarSource, /calendar-company-event-holiday/);
+  assert.match(styles, /\.calendar-legend-company[\s\S]*?background:\s*#fef3c7/);
+  assert.match(styles, /\.calendar-legend-inventory[\s\S]*?background:\s*#f3e8ff/);
+  assert.match(styles, /\.calendar-legend-training[\s\S]*?background:\s*#dcfce7/);
+  assert.match(styles, /\.calendar-legend-meeting[\s\S]*?background:\s*#cffafe/);
+  assert.match(styles, /\.calendar-legend-holiday[\s\S]*?background:\s*#ffe4e6/);
 });

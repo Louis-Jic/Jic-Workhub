@@ -1137,17 +1137,75 @@ body {
 
 .calendar-event.calendar-company-event,
 .calendar-list-event.calendar-company-event {
-  border-color: #fdba74;
-  background: #ffedd5;
-  color: #9a3412;
+  border-width: 1px;
+  border-style: solid;
+  box-shadow: inset 4px 0 0 currentColor;
+}
+
+.calendar-event.calendar-company-event-activity,
+.calendar-list-event.calendar-company-event-activity,
+.calendar-legend-company {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.calendar-event.calendar-company-event-inventory,
+.calendar-list-event.calendar-company-event-inventory,
+.calendar-legend-inventory {
+  border-color: #a855f7;
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.calendar-event.calendar-company-event-training,
+.calendar-list-event.calendar-company-event-training,
+.calendar-legend-training {
+  border-color: #22c55e;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.calendar-event.calendar-company-event-meeting,
+.calendar-list-event.calendar-company-event-meeting,
+.calendar-legend-meeting {
+  border-color: #06b6d4;
+  background: #cffafe;
+  color: #155e75;
+}
+
+.calendar-event.calendar-company-event-holiday,
+.calendar-list-event.calendar-company-event-holiday,
+.calendar-legend-holiday {
+  border-color: #f43f5e;
+  background: #ffe4e6;
+  color: #9f1239;
+}
+
+.calendar-event.calendar-company-event-other,
+.calendar-list-event.calendar-company-event-other {
+  border-color: #64748b;
+  background: #e2e8f0;
+  color: #334155;
 }
 
 .calendar-event.calendar-company-event:hover,
 .calendar-event.calendar-company-event:focus-visible,
 .calendar-list-event.calendar-company-event:hover,
 .calendar-list-event.calendar-company-event:focus-visible {
-  background: #fed7aa;
-  outline-color: #ea580c;
+  filter: saturate(1.25) brightness(.96);
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.calendar-legend {
+  border: 1px solid currentColor;
+}
+
+.calendar-legend-leave {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1e3a8a;
 }
 
 .calendar-event-person {
