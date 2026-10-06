@@ -861,6 +861,8 @@ function todayMissingAttendanceHtml(users, today, settings) {
 }
 
 function isCompanyRestDay(dateKey, settings) {
+  const makeupWorkDates = new Set(Array.isArray(settings.makeupWorkDates) ? settings.makeupWorkDates : []);
+  if (makeupWorkDates.has(dateKey)) return false;
   const date = new Date(`${dateKey}T00:00:00`);
   const day = date.getDay();
   const holidayDates = new Set(Array.isArray(settings.holidayDates) ? settings.holidayDates : []);
@@ -2428,9 +2430,10 @@ async function renderSettings() {
     return;
   }
   const currentYear = String(new Date().getFullYear());
-  const [settings, companyEventData] = await Promise.all([
+  const [settings, companyEventData, annualCalendar] = await Promise.all([
     getWorkSettings(),
-    callSecureFunction("getCompanyEvents", { year: currentYear })
+    callSecureFunction("getCompanyEvents", { year: currentYear }),
+    callSecureFunction("getAnnualCalendar", { year: currentYear })
   ]);
   const shifts = normalizeWorkShifts(settings);
   const companyEvents = Array.isArray(companyEventData?.companyEvents) ? companyEventData.companyEvents : [];
@@ -2455,19 +2458,49 @@ async function renderSettings() {
         <div class="col-md-3"><label class="form-label" for="lunchStart">午休開始</label><input class="form-control" id="lunchStart" type="time" value="${settings.lunchStart}" required></div>
         <div class="col-md-3"><label class="form-label" for="lunchEnd">午休結束</label><input class="form-control" id="lunchEnd" type="time" value="${settings.lunchEnd}" required></div>
         <div class="col-md-3"><label class="form-label" for="lateGraceMinutes">遲到寬限分鐘</label><input class="form-control" id="lateGraceMinutes" type="number" value="${settings.lateGraceMinutes}" required></div>
-        <div class="col-12">
-          <label class="form-label" for="holidayDates">休息日 / 國定假日</label>
-          <textarea class="form-control" id="holidayDates" rows="4" placeholder="每行一個日期，例如 2026-01-01">${formatHolidayDates(settings.holidayDates)}</textarea>
-          <div class="form-text">六日會自動排除；這裡只需要填政府公告國定假日、補假或公司指定休息日，格式 YYYY-MM-DD。</div>
-        </div>
-        <div class="col-12">
-          <label class="form-label" for="specialClosureDates">特殊提早下班日</label>
-          <textarea class="form-control" id="specialClosureDates" rows="4" placeholder="每行一筆：2026-07-10 17:00 颱風提早關門">${formatSpecialClosureDates(settings.specialClosureDates)}</textarea>
-          <div class="form-text">格式：YYYY-MM-DD HH:mm 原因。例：2026-07-10 17:00 颱風提早關門。當天早退與應達工時會改用這個關門時間。</div>
-        </div>
       </div>
       <button class="btn btn-primary mt-3">儲存設定</button>
     </form>
+    <section class="panel p-3 mb-4" aria-labelledby="annualCalendarTitle">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h2 class="h5 mb-1" id="annualCalendarTitle">年度行事曆設定</h2>
+          <p class="muted mb-0">每年分開保存休假日、公司休息日、補班日與特殊提早下班日，不必維護一個無限增長的文字框。</p>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="annualCalendarPrevYear" type="button" aria-label="上一年度">‹</button>
+          <input class="form-control form-control-sm" id="annualCalendarYear" type="number" min="2000" max="2100" value="${currentYear}" style="width: 6.5rem" aria-label="年度">
+          <button class="btn btn-outline-secondary btn-sm" id="annualCalendarNextYear" type="button" aria-label="下一年度">›</button>
+        </div>
+      </div>
+      <div class="border rounded p-3 mb-3">
+        <h3 class="h6">新增休假日或補班日</h3>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3"><label class="form-label" for="annualDayDate">日期</label><input class="form-control" id="annualDayDate" type="date"></div>
+          <div class="col-md-4"><label class="form-label" for="annualDayName">名稱</label><input class="form-control" id="annualDayName" maxlength="120" placeholder="例如：國慶日或春節補班"></div>
+          <div class="col-md-3"><label class="form-label" for="annualDayType">類型</label><select class="form-select" id="annualDayType"><option value="holiday">國定／補假</option><option value="company_rest">公司休息日</option><option value="makeup_workday">補班日</option></select></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="annualDayAdd" type="button">加入</button></div>
+        </div>
+      </div>
+      <div class="border rounded p-3 mb-3">
+        <h3 class="h6">新增特殊提早下班日</h3>
+        <div class="row g-2 align-items-end">
+          <div class="col-md-3"><label class="form-label" for="annualClosureDate">日期</label><input class="form-control" id="annualClosureDate" type="date"></div>
+          <div class="col-md-2"><label class="form-label" for="annualClosureTime">關門時間</label><input class="form-control" id="annualClosureTime" type="time" value="17:00"></div>
+          <div class="col-md-5"><label class="form-label" for="annualClosureReason">原因</label><input class="form-control" id="annualClosureReason" maxlength="200" placeholder="例如：颱風提早關門"></div>
+          <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="annualClosureAdd" type="button">加入</button></div>
+        </div>
+      </div>
+      <div id="annualCalendarMigrationNotice" class="alert alert-info py-2" hidden>已帶入舊版設定中的這個年度資料；儲存後會改用年度管理。</div>
+      <div class="row g-3">
+        <div class="col-lg-7"><h3 class="h6">休假日與補班日</h3><div id="annualDayList"></div></div>
+        <div class="col-lg-5"><h3 class="h6">特殊提早下班日</h3><div id="annualClosureList"></div></div>
+      </div>
+      <div class="d-flex align-items-center gap-3 mt-3">
+        <button class="btn btn-primary" id="annualCalendarSave" type="button">儲存 <span data-annual-calendar-save-year>${currentYear}</span> 年行事曆</button>
+        <span class="small muted" id="annualCalendarCount"></span>
+      </div>
+    </section>
     <section class="panel p-3" aria-labelledby="companyEventSectionTitle">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
         <div>
@@ -2587,8 +2620,6 @@ async function renderSettings() {
         workShifts,
         lunchStart: qs("#lunchStart").value,
         lunchEnd: qs("#lunchEnd").value,
-        holidayDates: readHolidayDates(),
-        specialClosureDates: readSpecialClosureDates(),
         standardHours: Number(qs("#standardHours").value),
         lateGraceMinutes: Number(qs("#lateGraceMinutes").value)
       });
@@ -2597,7 +2628,115 @@ async function renderSettings() {
       showToast(`設定儲存失敗：${error.message}`, "danger");
     }
   });
+  setupAnnualCalendarAdmin(annualCalendar, currentYear);
   setupCompanyEventAdmin(companyEvents);
+}
+
+function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
+  let year = initialYear;
+  let days = Array.isArray(initialCalendar?.days) ? [...initialCalendar.days] : [];
+  let closures = Array.isArray(initialCalendar?.specialClosures) ? [...initialCalendar.specialClosures] : [];
+
+  function belongsToSelectedYear(date) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) && date.startsWith(`${year}-`);
+  }
+
+  function render() {
+    days.sort((a, b) => a.date.localeCompare(b.date));
+    closures.sort((a, b) => a.date.localeCompare(b.date));
+    qs("#annualDayList").innerHTML = days.length
+      ? `<div class="list-group">${days.map((item) => `<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><div><strong>${escapeHtml(item.date)}</strong><span class="badge ms-2 ${item.type === "makeup_workday" ? "text-bg-success" : item.type === "company_rest" ? "text-bg-secondary" : "text-bg-danger"}">${item.type === "makeup_workday" ? "補班日" : item.type === "company_rest" ? "公司休息日" : "國定／補假"}</span><div class="small muted mt-1">${escapeHtml(item.name || "未命名")}</div></div><button class="btn btn-outline-danger btn-sm" type="button" data-annual-day-remove="${escapeHtml(item.date)}">移除</button></div>`).join("")}</div>`
+      : '<div class="muted border rounded p-3">這個年度尚未設定休假日或補班日。</div>';
+    qs("#annualClosureList").innerHTML = closures.length
+      ? `<div class="list-group">${closures.map((item) => `<div class="list-group-item d-flex justify-content-between align-items-center gap-2"><div><strong>${escapeHtml(item.date)} · ${escapeHtml(item.time)}</strong><div class="small muted mt-1">${escapeHtml(item.reason || "未填原因")}</div></div><button class="btn btn-outline-danger btn-sm" type="button" data-annual-closure-remove="${escapeHtml(item.date)}">移除</button></div>`).join("")}</div>`
+      : '<div class="muted border rounded p-3">這個年度沒有特殊提早下班日。</div>';
+    qs("#annualCalendarCount").textContent = `${days.length} 個日期、${closures.length} 個提早下班日`;
+    qs("[data-annual-calendar-save-year]").textContent = year;
+  }
+
+  async function loadYear(nextYear) {
+    const normalizedYear = String(nextYear);
+    if (!/^\d{4}$/.test(normalizedYear) || Number(normalizedYear) < 2000 || Number(normalizedYear) > 2100) {
+      showToast("年度必須介於 2000 到 2100 年", "warning");
+      qs("#annualCalendarYear").value = year;
+      return;
+    }
+    const result = await callSecureFunction("getAnnualCalendar", { year: normalizedYear });
+    year = normalizedYear;
+    days = Array.isArray(result?.days) ? [...result.days] : [];
+    closures = Array.isArray(result?.specialClosures) ? [...result.specialClosures] : [];
+    qs("#annualCalendarYear").value = year;
+    qs("#annualCalendarMigrationNotice").hidden = result?.migrated !== true;
+    qs("#annualDayDate").value = `${year}-01-01`;
+    qs("#annualClosureDate").value = `${year}-01-01`;
+    render();
+  }
+
+  qs("#annualDayAdd").addEventListener("click", () => {
+    const item = {
+      date: qs("#annualDayDate").value,
+      name: qs("#annualDayName").value.trim(),
+      type: qs("#annualDayType").value
+    };
+    if (!belongsToSelectedYear(item.date) || !item.name) {
+      showToast("請填寫所選年度內的日期與名稱", "warning");
+      return;
+    }
+    days = days.filter((existing) => existing.date !== item.date);
+    days.push(item);
+    qs("#annualDayName").value = "";
+    render();
+  });
+  qs("#annualClosureAdd").addEventListener("click", () => {
+    const item = {
+      date: qs("#annualClosureDate").value,
+      time: qs("#annualClosureTime").value,
+      reason: qs("#annualClosureReason").value.trim()
+    };
+    if (!belongsToSelectedYear(item.date) || !/^\d{2}:\d{2}$/.test(item.time)) {
+      showToast("請填寫所選年度內的日期與關門時間", "warning");
+      return;
+    }
+    closures = closures.filter((existing) => existing.date !== item.date);
+    closures.push(item);
+    qs("#annualClosureReason").value = "";
+    render();
+  });
+  qs("#annualDayList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-annual-day-remove]");
+    if (!button) return;
+    days = days.filter((item) => item.date !== button.dataset.annualDayRemove);
+    render();
+  });
+  qs("#annualClosureList").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-annual-closure-remove]");
+    if (!button) return;
+    closures = closures.filter((item) => item.date !== button.dataset.annualClosureRemove);
+    render();
+  });
+  qs("#annualCalendarYear").addEventListener("change", async (event) => {
+    try { await loadYear(event.target.value); } catch (error) { showToast(`年度行事曆載入失敗：${error.message}`, "danger"); }
+  });
+  qs("#annualCalendarPrevYear").addEventListener("click", async () => {
+    try { await loadYear(Number(year) - 1); } catch (error) { showToast(`年度行事曆載入失敗：${error.message}`, "danger"); }
+  });
+  qs("#annualCalendarNextYear").addEventListener("click", async () => {
+    try { await loadYear(Number(year) + 1); } catch (error) { showToast(`年度行事曆載入失敗：${error.message}`, "danger"); }
+  });
+  qs("#annualCalendarSave").addEventListener("click", async () => {
+    try {
+      await callSecureFunction("saveAnnualCalendar", { year, days, specialClosures: closures });
+      qs("#annualCalendarMigrationNotice").hidden = true;
+      showToast(`${year} 年行事曆已儲存`, "success");
+    } catch (error) {
+      showToast(`年度行事曆儲存失敗：${error.message}`, "danger");
+    }
+  });
+
+  qs("#annualCalendarMigrationNotice").hidden = initialCalendar?.migrated !== true;
+  qs("#annualDayDate").value = `${year}-01-01`;
+  qs("#annualClosureDate").value = `${year}-01-01`;
+  render();
 }
 
 function companyEventCategoryOptions(selected) {
@@ -2833,47 +2972,6 @@ function timeToMinutes(value) {
 
 function isWholeHourValue(value) {
   return Math.abs(value - Math.round(value)) < 0.0001;
-}
-
-function formatHolidayDates(value) {
-  if (!Array.isArray(value)) return "";
-  return value.filter(Boolean).sort().join("\n");
-}
-
-function formatSpecialClosureDates(value) {
-  if (!Array.isArray(value)) return "";
-  return value
-    .filter((item) => item?.date && item?.closeTime)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((item) => `${item.date} ${item.closeTime}${item.reason ? ` ${item.reason}` : ""}`)
-    .join("\n");
-}
-
-function readHolidayDates() {
-  return qs("#holidayDates").value
-    .split(/\s|,|，/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .filter((item, index, array) => /^\d{4}-\d{2}-\d{2}$/.test(item) && array.indexOf(item) === index)
-    .sort();
-}
-
-function readSpecialClosureDates() {
-  const byDate = new Map();
-  qs("#specialClosureDates").value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      const match = line.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?:\s+(.+))?$/);
-      if (!match || !isTimeValueValid(match[2])) return;
-      byDate.set(match[1], {
-        date: match[1],
-        closeTime: match[2],
-        reason: (match[3] || "").trim()
-      });
-    });
-  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function escapeHtml(value) {

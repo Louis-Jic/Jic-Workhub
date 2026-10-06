@@ -17,6 +17,7 @@ const COMPANY_EVENT_CATEGORIES = new Set([
   "holiday_notice",
   "other"
 ]);
+const CALENDAR_DAY_TYPES = new Set(["holiday", "company_rest", "makeup_workday"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -526,26 +527,12 @@ function createAdminHandlers({
     if (timeMinutes(lunchEnd) <= timeMinutes(lunchStart)) {
       throw new HttpsError("invalid-argument", "午休結束時間必須晚於開始時間。");
     }
-    const holidayDates = [...new Set((Array.isArray(input.holidayDates) ? input.holidayDates : [])
-      .map((date) => cleanText(date, 10))
-      .filter((date) => DATE_PATTERN.test(date)))].slice(0, 500);
-    const specialClosureDates = (Array.isArray(input.specialClosureDates) ? input.specialClosureDates : [])
-      .slice(0, 500)
-      .map((item) => {
-        const date = cleanText(item.date, 10);
-        const time = cleanText(item.time, 5);
-        if (!DATE_PATTERN.test(date)) throw new HttpsError("invalid-argument", "特殊關門日期格式錯誤。");
-        assertTime(time, "特殊關門時間");
-        return { date, time, reason: cleanText(item.reason, 200) };
-      });
     const payload = {
       workStart: workShifts[0].workStart,
       workEnd: workShifts[0].workEnd,
       workShifts,
       lunchStart,
       lunchEnd,
-      holidayDates,
-      specialClosureDates,
       standardHours: finiteNumber(input.standardHours, "標準工時", 1, 24),
       lateGraceMinutes: finiteNumber(input.lateGraceMinutes, "寬限分鐘", 0, 120),
       updatedBy: admin.id,
@@ -557,10 +544,133 @@ function createAdminHandlers({
     await audit("work_settings.updated", admin, {
       before: beforeSnap.exists ? beforeSnap.data() : null,
       shiftCount: workShifts.length,
-      holidayCount: holidayDates.length,
-      closureCount: specialClosureDates.length
+      calendarManagedSeparately: true
     });
     return { success: true };
+  }
+
+  function calendarYear(value) {
+    const year = cleanText(value, 4);
+    if (!/^\d{4}$/.test(year) || Number(year) < 2000 || Number(year) > 2100) {
+      throw new HttpsError("invalid-argument", "年度必須介於 2000 到 2100 年。");
+    }
+    return year;
+  }
+
+  function normalizeCalendarDay(item, year) {
+    const date = cleanText(item?.date, 10);
+    const type = cleanText(item?.type, 30);
+    if (!isCalendarDate(date) || !date.startsWith(`${year}-`) || !CALENDAR_DAY_TYPES.has(type)) {
+      throw new HttpsError("invalid-argument", "年度行事曆日期或類型不正確。");
+    }
+    return { date, name: cleanText(item?.name, 120), type };
+  }
+
+  function normalizeCalendarClosure(item, year) {
+    const date = cleanText(item?.date, 10);
+    const time = cleanText(item?.time || item?.closeTime, 5);
+    if (!isCalendarDate(date) || !date.startsWith(`${year}-`)) {
+      throw new HttpsError("invalid-argument", "提早下班日期不屬於所選年度。");
+    }
+    assertTime(time, "提早下班時間");
+    return { date, time, reason: cleanText(item?.reason, 200) };
+  }
+
+  async function getAnnualCalendar(request) {
+    const admin = await profileFor(request.auth.uid);
+    requireAdmin(admin);
+    const year = calendarYear(request.data?.year);
+    const yearSnap = await db.doc(`calendarYears/${year}`).get();
+    if (yearSnap.exists) {
+      const data = yearSnap.data();
+      return {
+        year,
+        days: Array.isArray(data.days) ? data.days : [],
+        specialClosures: Array.isArray(data.specialClosures) ? data.specialClosures : [],
+        migrated: false
+      };
+    }
+    const settingsSnap = await db.doc("workSettings/default").get();
+    const settings = settingsSnap.exists ? settingsSnap.data() : {};
+    const makeupDates = new Set(Array.isArray(settings.makeupWorkDates) ? settings.makeupWorkDates : []);
+    const days = (Array.isArray(settings.holidayDates) ? settings.holidayDates : [])
+      .filter((date) => String(date).startsWith(`${year}-`))
+      .map((date) => ({ date, name: "休息日 / 國定假日", type: "holiday" }));
+    for (const date of makeupDates) {
+      if (String(date).startsWith(`${year}-`)) days.push({ date, name: "補班日", type: "makeup_workday" });
+    }
+    const specialClosures = (Array.isArray(settings.specialClosureDates) ? settings.specialClosureDates : [])
+      .filter((item) => String(item?.date || "").startsWith(`${year}-`))
+      .map((item) => ({ date: item.date, time: item.time || item.closeTime || "", reason: item.reason || "" }))
+      .filter((item) => TIME_PATTERN.test(item.time));
+    return { year, days, specialClosures, migrated: days.length > 0 || specialClosures.length > 0 };
+  }
+
+  async function saveAnnualCalendar(request) {
+    const admin = await profileFor(request.auth.uid);
+    requireAdmin(admin);
+    const input = request.data || {};
+    const year = calendarYear(input.year);
+    const dayMap = new Map((Array.isArray(input.days) ? input.days : [])
+      .slice(0, 400)
+      .map((item) => normalizeCalendarDay(item, year))
+      .map((item) => [item.date, item]));
+    const closureMap = new Map((Array.isArray(input.specialClosures) ? input.specialClosures : [])
+      .slice(0, 100)
+      .map((item) => normalizeCalendarClosure(item, year))
+      .map((item) => [item.date, item]));
+    const days = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const specialClosures = [...closureMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+    const ref = db.doc(`calendarYears/${year}`);
+    const beforeSnap = await ref.get();
+    await ref.set({
+      year,
+      days,
+      specialClosures,
+      updatedBy: admin.id,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+
+    const calendarSnap = await db.collection("calendarYears").get();
+    const managedYears = new Set(calendarSnap.docs.map((docSnap) => docSnap.id));
+    const allDays = calendarSnap.docs.flatMap((docSnap) => Array.isArray(docSnap.data().days) ? docSnap.data().days : []);
+    const allClosures = calendarSnap.docs.flatMap((docSnap) => Array.isArray(docSnap.data().specialClosures)
+      ? docSnap.data().specialClosures
+      : []);
+    const settingsRef = db.doc("workSettings/default");
+    const settingsSnap = await settingsRef.get();
+    const existingSettings = settingsSnap.exists ? settingsSnap.data() : {};
+    const unmanagedHolidayDates = (Array.isArray(existingSettings.holidayDates) ? existingSettings.holidayDates : [])
+      .filter((date) => isCalendarDate(date) && !managedYears.has(date.slice(0, 4)));
+    const unmanagedMakeupDates = (Array.isArray(existingSettings.makeupWorkDates) ? existingSettings.makeupWorkDates : [])
+      .filter((date) => isCalendarDate(date) && !managedYears.has(date.slice(0, 4)));
+    const unmanagedClosures = (Array.isArray(existingSettings.specialClosureDates) ? existingSettings.specialClosureDates : [])
+      .filter((item) => isCalendarDate(item?.date) && !managedYears.has(item.date.slice(0, 4)));
+    const holidayDates = [...new Set([...unmanagedHolidayDates, ...allDays
+      .filter((item) => item?.type === "holiday" || item?.type === "company_rest")
+      .map((item) => item.date)
+      .filter(isCalendarDate)])].sort();
+    const makeupWorkDates = [...new Set([...unmanagedMakeupDates, ...allDays
+      .filter((item) => item?.type === "makeup_workday")
+      .map((item) => item.date)
+      .filter(isCalendarDate)])].sort();
+    const specialClosureDates = [...unmanagedClosures, ...allClosures]
+      .filter((item) => isCalendarDate(item?.date) && TIME_PATTERN.test(item?.time || item?.closeTime || ""))
+      .map((item) => ({ date: item.date, closeTime: item.time || item.closeTime, reason: cleanText(item.reason, 200) }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    await settingsRef.set({
+      holidayDates,
+      makeupWorkDates,
+      specialClosureDates,
+      calendarUpdatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    await audit("annual_calendar.updated", admin, {
+      year,
+      before: beforeSnap.exists ? beforeSnap.data() : null,
+      dayCount: days.length,
+      closureCount: specialClosures.length
+    });
+    return { success: true, year, days, specialClosures };
   }
 
   async function saveCompanyEvent(request) {
@@ -659,6 +769,8 @@ function createAdminHandlers({
     recalculateOvertimeRequest,
     voidApprovedLeave,
     saveWorkSettings,
+    getAnnualCalendar,
+    saveAnnualCalendar,
     saveCompanyEvent,
     deleteCompanyEvent,
     deleteAttendanceRecord

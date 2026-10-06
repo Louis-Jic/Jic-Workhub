@@ -272,6 +272,7 @@ function countSkippedRestDays(start, end) {
 }
 
 function isRestDay(date, dateKey = todayKey(date)) {
+  if (configuredMakeupWorkDates().has(dateKey)) return false;
   return isWeekend(date) || configuredHolidayDates().has(dateKey);
 }
 
@@ -282,6 +283,10 @@ function isWeekend(date) {
 
 function configuredHolidayDates() {
   return new Set(Array.isArray(settings.holidayDates) ? settings.holidayDates : []);
+}
+
+function configuredMakeupWorkDates() {
+  return new Set(Array.isArray(settings.makeupWorkDates) ? settings.makeupWorkDates : []);
 }
 
 function isWholeHourValue(value) {

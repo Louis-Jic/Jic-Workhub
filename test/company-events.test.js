@@ -25,6 +25,19 @@ test("公司活動清單可依年度與條件篩選並分頁", () => {
   assert.match(functionsSource, /event\.startDate <= yearEnd && event\.endDate >= yearStart/);
 });
 
+test("系統設定以年度分開管理休假日、補班日與提早下班日", () => {
+  assert.match(adminSource, /id="annualCalendarYear"/);
+  assert.match(adminSource, /id="annualDayType"/);
+  assert.match(adminSource, /value="makeup_workday"/);
+  assert.match(adminSource, /id="annualClosureTime"/);
+  assert.match(adminSource, /callSecureFunction\("getAnnualCalendar"/);
+  assert.match(adminSource, /callSecureFunction\("saveAnnualCalendar"/);
+  assert.doesNotMatch(adminSource, /id="holidayDates"/);
+  assert.doesNotMatch(adminSource, /id="specialClosureDates"/);
+  assert.match(functionsSource, /exports\.getAnnualCalendar/);
+  assert.match(functionsSource, /exports\.saveAnnualCalendar/);
+});
+
 test("公司活動類型在系統設定渲染前完成初始化", () => {
   const labelsIndex = adminSource.indexOf("const COMPANY_EVENT_LABELS");
   const settingsDispatchIndex = adminSource.indexOf('if (mode === "settings") await renderSettings()');

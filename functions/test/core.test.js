@@ -7,6 +7,7 @@ const {
   calculateHoursExcludingLunch,
   calculateWorkHours,
   decideLocation,
+  effectiveWorkEnd,
   earliestCheckInsByUserDate,
   haversineMeters,
   isRestDay,
@@ -169,6 +170,13 @@ test("late ranking uses only the earliest check-in for each employee and date", 
 test("weekends and configured holidays are rest days", () => {
   assert.equal(isRestDay("2026-07-25", {}), true);
   assert.equal(isRestDay("2026-07-23", { holidayDates: ["2026-07-23"] }), true);
+  assert.equal(isRestDay("2026-07-25", { makeupWorkDates: ["2026-07-25"] }), false);
   assert.equal(isRestDay("2026-07-23", {}), false);
   assert.ok(haversineMeters({ latitude: 25, longitude: 121 }, { latitude: 25, longitude: 121 }) < 1);
+});
+
+test("special closure accepts the annual calendar closeTime cache", () => {
+  assert.equal(effectiveWorkEnd("2026-07-10", { workEnd: "18:00" }, {
+    specialClosureDates: [{ date: "2026-07-10", closeTime: "17:00" }]
+  }), "17:00");
 });

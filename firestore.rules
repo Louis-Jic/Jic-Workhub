@@ -169,6 +169,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /calendarYears/{year} {
+      allow read, write: if false;
+    }
+
     match /rateLimits/{limitId} {
       allow read, write: if false;
     }

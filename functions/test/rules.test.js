@@ -130,6 +130,7 @@ test("Privileged browser writes are denied even for administrators", { skip: !em
     await assertFails(updateDoc(doc(adminDb, "users/employee-a"), { role: "admin" }));
     await assertFails(updateDoc(doc(adminDb, "leaveRequests/request-a"), { status: "approved" }));
     await assertFails(setDoc(doc(adminDb, "workSettings/default"), { standardHours: 8 }));
+    await assertFails(setDoc(doc(adminDb, "calendarYears/2026"), { year: "2026", days: [] }));
     await assertFails(setDoc(doc(adminDb, "companyEvents/forged"), { title: "偽造活動" }));
     await assertFails(deleteDoc(doc(adminDb, "companyEvents/event-a")));
     await assertFails(deleteDoc(doc(adminDb, "attendance/record-a")));

@@ -145,6 +145,8 @@ function canPunchOutsideWindow(profile = {}) {
 }
 
 function isRestDay(dateKey, settings = {}) {
+  const makeupWorkDates = new Set(Array.isArray(settings.makeupWorkDates) ? settings.makeupWorkDates : []);
+  if (makeupWorkDates.has(dateKey)) return false;
   const noon = taipeiDateTime(dateKey, "12:00");
   const weekday = taipeiParts(noon).weekday;
   const holidays = new Set(Array.isArray(settings.holidayDates) ? settings.holidayDates : []);
@@ -153,8 +155,8 @@ function isRestDay(dateKey, settings = {}) {
 
 function effectiveWorkEnd(dateKey, shift, settings = {}) {
   const closure = (Array.isArray(settings.specialClosureDates) ? settings.specialClosureDates : [])
-    .find((item) => item?.date === dateKey && /^\d{2}:\d{2}$/.test(item.time || ""));
-  return closure?.time || shift.workEnd;
+    .find((item) => item?.date === dateKey && /^\d{2}:\d{2}$/.test(item.time || item.closeTime || ""));
+  return closure?.time || closure?.closeTime || shift.workEnd;
 }
 
 function attendanceRanges(records) {

@@ -192,3 +192,51 @@ test("company events reject invalid dates and non-admin changes", async () => {
     }
   }), /只有管理員/);
 });
+
+test("annual calendar migrates legacy settings and rebuilds the shared cache", async () => {
+  const db = fakeFirestore({
+    "workSettings/default": {
+      workStart: "09:00",
+      holidayDates: ["2026-10-09", "2027-01-01"],
+      specialClosureDates: [{ date: "2026-07-10", closeTime: "17:00", reason: "颱風" }]
+    }
+  });
+  const handlers = handlersFor(db, { daily: [], guard: [] });
+
+  const legacy = await handlers.getAnnualCalendar({ auth: { uid: "actor" }, data: { year: "2026" } });
+  assert.equal(legacy.migrated, true);
+  assert.deepEqual(legacy.days.map((item) => item.date), ["2026-10-09"]);
+  assert.equal(legacy.specialClosures[0].time, "17:00");
+
+  const saved = await handlers.saveAnnualCalendar({
+    auth: { uid: "actor" },
+    data: {
+      year: "2026",
+      days: [
+        { date: "2026-10-09", name: "國慶補假", type: "holiday" },
+        { date: "2026-10-10", name: "公司休息日", type: "company_rest" },
+        { date: "2026-10-17", name: "補班", type: "makeup_workday" }
+      ],
+      specialClosures: [{ date: "2026-07-10", time: "17:00", reason: "颱風" }]
+    }
+  });
+
+  assert.equal(saved.success, true);
+  assert.equal(db.documents.get("calendarYears/2026").days.length, 3);
+  assert.deepEqual(db.documents.get("workSettings/default").holidayDates, ["2026-10-09", "2026-10-10", "2027-01-01"]);
+  assert.deepEqual(db.documents.get("workSettings/default").makeupWorkDates, ["2026-10-17"]);
+  assert.deepEqual(db.documents.get("workSettings/default").specialClosureDates, [
+    { date: "2026-07-10", closeTime: "17:00", reason: "颱風" }
+  ]);
+});
+
+test("annual calendar rejects dates outside the selected year", async () => {
+  const handlers = handlersFor(fakeFirestore({}), { daily: [], guard: [] });
+  await assert.rejects(() => handlers.saveAnnualCalendar({
+    auth: { uid: "actor" },
+    data: {
+      year: "2026",
+      days: [{ date: "2027-01-01", name: "跨年度", type: "holiday" }]
+    }
+  }), /不正確/);
+});
