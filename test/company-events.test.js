@@ -75,17 +75,22 @@ test("行事曆以不同色系標示休假日與補班日", () => {
   assert.match(calendarSource, /calendar-legend-rest-day">休假日・不用上班/);
   assert.match(calendarSource, /date\.getDay\(\) === 0 \|\| date\.getDay\(\) === 6/);
   assert.match(calendarSource, /configured\?\.name \|\| \(isWeekend \? "週末" : "休假日"\)/);
+  assert.match(calendarSource, /isWeekendRest: isWeekend && !isConfiguredRestDay/);
+  assert.match(calendarSource, /if \(isWeekendRest\) return ""/);
   assert.match(calendarSource, /calendar-list-work-status-rest/);
   assert.match(calendarSource, /calendar-list-work-status-makeup/);
   assert.match(styles, /\.calendar-cell\.is-rest-day[\s\S]*?background:\s*#fff1f2/);
   assert.match(styles, /\.calendar-cell\.is-makeup-work-day[\s\S]*?background:\s*#f0fdf4/);
+  assert.match(styles, /\.calendar-cell\.is-weekend-rest[\s\S]*?background:\s*#f8fafc/);
 });
 
 test("管理員可輸入休假原因並在員工行事曆顯示", () => {
   assert.match(adminSource, /名稱／不用上班原因/);
   assert.match(adminSource, /data-annual-day-edit/);
+  assert.match(adminSource, /await persistCalendar\(`\$\{item\.date\} 已更新並儲存`\)/);
+  assert.doesNotMatch(adminSource, /此文字會顯示在員工休假行事曆/);
   assert.match(calendarSource, /escapeHtml\(reason\).*不用上班/);
-  assert.match(settingsHtml, /admin\.js\?v=20261006-5/);
+  assert.match(settingsHtml, /admin\.js\?v=20261006-6/);
 });
 
 test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色", () => {
@@ -93,5 +98,5 @@ test("行事曆使用同一個新版資源版本避免瀏覽器沿用舊配色",
   const scriptVersion = calendarHtml.match(/calendar\.js\?v=([^"']+)/)?.[1];
   assert.ok(styleVersion);
   assert.equal(scriptVersion, styleVersion);
-  assert.equal(styleVersion, "20261006-5");
+  assert.equal(styleVersion, "20261006-6");
 });

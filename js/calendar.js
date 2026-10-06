@@ -165,17 +165,17 @@ function renderLeaveCalendar(year, month, monthStart, monthEnd, events, companyE
     const dateKey = calendarDateKey(date);
     const isToday = sameDate(date, new Date());
     const workDay = workDayInfo(date, dateKey);
-    const { isRestDay, isMakeupWorkDay } = workDay;
+    const { isRestDay, isMakeupWorkDay, isWeekendRest } = workDay;
     const dayEvents = events.filter((item) => isEventOnDate(item, date));
     const dayCompanyEvents = companyEvents.filter((item) => isCompanyEventOnDate(item, dateKey));
-    cells.push(`<div class="calendar-cell${isToday ? " is-today" : ""}${isRestDay ? " is-rest-day" : ""}${isMakeupWorkDay ? " is-makeup-work-day" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
+    cells.push(`<div class="calendar-cell${isToday ? " is-today" : ""}${isRestDay && !isWeekendRest ? " is-rest-day" : ""}${isWeekendRest ? " is-weekend-rest" : ""}${isMakeupWorkDay ? " is-makeup-work-day" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
       <div class="calendar-day-heading"><span class="fw-semibold">${day}</span>${workDayStatusHtml(workDay)}</div>
       ${dayCompanyEvents.map((item) => companyEventHtml(item)).join("")}
       ${dayEvents.map((item) => calendarEventHtml(item)).join("")}
     </div>`);
 
     if (dayEvents.length || dayCompanyEvents.length || isToday || isRestDay || isMakeupWorkDay) {
-      listItems.push(`<div class="calendar-list-item${isToday ? " is-today" : ""}${isRestDay ? " is-rest-day" : ""}${isMakeupWorkDay ? " is-makeup-work-day" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
+      listItems.push(`<div class="calendar-list-item${isToday ? " is-today" : ""}${isRestDay && !isWeekendRest ? " is-rest-day" : ""}${isWeekendRest ? " is-weekend-rest" : ""}${isMakeupWorkDay ? " is-makeup-work-day" : ""}" data-calendar-date="${dateKey}"${isToday ? ' aria-current="date"' : ""}>
         <div class="calendar-list-date">
           <span class="calendar-list-day">${day}</span>
           <span class="calendar-list-week">${days[date.getDay()]}</span>
@@ -206,7 +206,7 @@ function workDayInfo(date, dateKey) {
   const configured = configuredDayDetails.get(dateKey);
   const isMakeupWorkDay = configuredMakeupWorkDays.has(dateKey) || configured?.type === "makeup_workday";
   if (isMakeupWorkDay) {
-    return { isRestDay: false, isMakeupWorkDay: true, reason: configured?.name || "補班日" };
+    return { isRestDay: false, isMakeupWorkDay: true, isWeekendRest: false, reason: configured?.name || "補班日" };
   }
   const isWeekend = date.getDay() === 0 || date.getDay() === 6;
   const isConfiguredRestDay = configuredRestDays.has(dateKey)
@@ -214,16 +214,18 @@ function workDayInfo(date, dateKey) {
     || configured?.type === "company_rest";
   const isRestDay = isWeekend || isConfiguredRestDay;
   const reason = configured?.name || (isWeekend ? "週末" : "休假日");
-  return { isRestDay, isMakeupWorkDay: false, reason };
+  return { isRestDay, isMakeupWorkDay: false, isWeekendRest: isWeekend && !isConfiguredRestDay, reason };
 }
 
-function workDayStatusHtml({ isRestDay, isMakeupWorkDay, reason }) {
+function workDayStatusHtml({ isRestDay, isMakeupWorkDay, isWeekendRest, reason }) {
+  if (isWeekendRest) return "";
   if (isRestDay) return `<span class="calendar-day-status calendar-day-status-rest" title="${escapeHtml(reason)}・不用上班">${escapeHtml(reason)}・不用上班</span>`;
   if (isMakeupWorkDay) return `<span class="calendar-day-status calendar-day-status-makeup" title="${escapeHtml(reason)}・需要上班">${escapeHtml(reason)}</span>`;
   return "";
 }
 
-function workDayStatusListHtml({ isRestDay, isMakeupWorkDay, reason }) {
+function workDayStatusListHtml({ isRestDay, isMakeupWorkDay, isWeekendRest, reason }) {
+  if (isWeekendRest) return '<div class="calendar-list-work-status calendar-list-work-status-weekend"><strong>週末休息</strong><span>不用上班</span></div>';
   if (isRestDay) return `<div class="calendar-list-work-status calendar-list-work-status-rest"><strong>${escapeHtml(reason)}</strong><span>今天不用上班</span></div>`;
   if (isMakeupWorkDay) return `<div class="calendar-list-work-status calendar-list-work-status-makeup"><strong>${escapeHtml(reason)}</strong><span>今天需要上班</span></div>`;
   return "";

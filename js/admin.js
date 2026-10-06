@@ -2477,7 +2477,7 @@ async function renderSettings() {
         <h3 class="h6">新增休假日或補班日</h3>
         <div class="row g-2 align-items-end">
           <div class="col-md-3"><label class="form-label" for="annualDayDate">日期</label><input class="form-control" id="annualDayDate" type="date"></div>
-          <div class="col-md-4"><label class="form-label" for="annualDayName">名稱／不用上班原因</label><input class="form-control" id="annualDayName" maxlength="120" placeholder="例如：國慶日補假（因 10/10 國定假日）"><div class="form-text">此文字會顯示在員工休假行事曆。</div></div>
+          <div class="col-md-4"><label class="form-label" for="annualDayName">名稱／不用上班原因</label><input class="form-control" id="annualDayName" maxlength="120" placeholder="例如：國慶日補假（因 10/10 國定假日）"></div>
           <div class="col-md-3"><label class="form-label" for="annualDayType">類型</label><select class="form-select" id="annualDayType"><option value="holiday">國定／補假</option><option value="company_rest">公司休息日</option><option value="makeup_workday">補班日</option></select></div>
           <div class="col-md-2"><button class="btn btn-outline-primary w-100" id="annualDayAdd" type="button">加入／更新</button></div>
         </div>
@@ -2636,6 +2636,7 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
   let year = initialYear;
   let days = Array.isArray(initialCalendar?.days) ? [...initialCalendar.days] : [];
   let closures = Array.isArray(initialCalendar?.specialClosures) ? [...initialCalendar.specialClosures] : [];
+  let savingCalendar = false;
 
   function belongsToSelectedYear(date) {
     return /^\d{4}-\d{2}-\d{2}$/.test(date) && date.startsWith(`${year}-`);
@@ -2672,7 +2673,22 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
     render();
   }
 
-  qs("#annualDayAdd").addEventListener("click", () => {
+  async function persistCalendar(successMessage) {
+    if (savingCalendar) return;
+    savingCalendar = true;
+    const controls = [qs("#annualDayAdd"), qs("#annualClosureAdd"), qs("#annualCalendarSave")];
+    controls.forEach((control) => { control.disabled = true; });
+    try {
+      await callSecureFunction("saveAnnualCalendar", { year, days, specialClosures: closures });
+      qs("#annualCalendarMigrationNotice").hidden = true;
+      showToast(successMessage, "success");
+    } finally {
+      savingCalendar = false;
+      controls.forEach((control) => { control.disabled = false; });
+    }
+  }
+
+  qs("#annualDayAdd").addEventListener("click", async () => {
     const item = {
       date: qs("#annualDayDate").value,
       name: qs("#annualDayName").value.trim(),
@@ -2682,12 +2698,20 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
       showToast("請填寫所選年度內的日期與名稱", "warning");
       return;
     }
+    const previousDays = days;
     days = days.filter((existing) => existing.date !== item.date);
     days.push(item);
-    qs("#annualDayName").value = "";
     render();
+    try {
+      await persistCalendar(`${item.date} 已更新並儲存`);
+      qs("#annualDayName").value = "";
+    } catch (error) {
+      days = previousDays;
+      render();
+      showToast(`日期儲存失敗：${error.message}`, "danger");
+    }
   });
-  qs("#annualClosureAdd").addEventListener("click", () => {
+  qs("#annualClosureAdd").addEventListener("click", async () => {
     const item = {
       date: qs("#annualClosureDate").value,
       time: qs("#annualClosureTime").value,
@@ -2697,12 +2721,20 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
       showToast("請填寫所選年度內的日期與關門時間", "warning");
       return;
     }
+    const previousClosures = closures;
     closures = closures.filter((existing) => existing.date !== item.date);
     closures.push(item);
-    qs("#annualClosureReason").value = "";
     render();
+    try {
+      await persistCalendar(`${item.date} 提早下班設定已儲存`);
+      qs("#annualClosureReason").value = "";
+    } catch (error) {
+      closures = previousClosures;
+      render();
+      showToast(`提早下班設定儲存失敗：${error.message}`, "danger");
+    }
   });
-  qs("#annualDayList").addEventListener("click", (event) => {
+  qs("#annualDayList").addEventListener("click", async (event) => {
     const editButton = event.target.closest("[data-annual-day-edit]");
     if (editButton) {
       const item = days.find((day) => day.date === editButton.dataset.annualDayEdit);
@@ -2715,14 +2747,30 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
     }
     const button = event.target.closest("[data-annual-day-remove]");
     if (!button) return;
+    const previousDays = days;
     days = days.filter((item) => item.date !== button.dataset.annualDayRemove);
     render();
+    try {
+      await persistCalendar(`${button.dataset.annualDayRemove} 已移除並儲存`);
+    } catch (error) {
+      days = previousDays;
+      render();
+      showToast(`日期移除失敗：${error.message}`, "danger");
+    }
   });
-  qs("#annualClosureList").addEventListener("click", (event) => {
+  qs("#annualClosureList").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-annual-closure-remove]");
     if (!button) return;
+    const previousClosures = closures;
     closures = closures.filter((item) => item.date !== button.dataset.annualClosureRemove);
     render();
+    try {
+      await persistCalendar(`${button.dataset.annualClosureRemove} 提早下班設定已移除`);
+    } catch (error) {
+      closures = previousClosures;
+      render();
+      showToast(`提早下班設定移除失敗：${error.message}`, "danger");
+    }
   });
   qs("#annualCalendarYear").addEventListener("change", async (event) => {
     try { await loadYear(event.target.value); } catch (error) { showToast(`年度行事曆載入失敗：${error.message}`, "danger"); }
@@ -2735,9 +2783,7 @@ function setupAnnualCalendarAdmin(initialCalendar, initialYear) {
   });
   qs("#annualCalendarSave").addEventListener("click", async () => {
     try {
-      await callSecureFunction("saveAnnualCalendar", { year, days, specialClosures: closures });
-      qs("#annualCalendarMigrationNotice").hidden = true;
-      showToast(`${year} 年行事曆已儲存`, "success");
+      await persistCalendar(`${year} 年行事曆已儲存`);
     } catch (error) {
       showToast(`年度行事曆儲存失敗：${error.message}`, "danger");
     }
