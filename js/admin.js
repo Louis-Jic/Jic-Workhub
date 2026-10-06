@@ -2427,9 +2427,10 @@ async function renderSettings() {
     content.innerHTML = `<div class="alert alert-warning">只有管理員可以修改系統設定。</div>`;
     return;
   }
+  const currentYear = String(new Date().getFullYear());
   const [settings, companyEventData] = await Promise.all([
     getWorkSettings(),
-    callSecureFunction("getCompanyEvents")
+    callSecureFunction("getCompanyEvents", { year: currentYear })
   ]);
   const shifts = normalizeWorkShifts(settings);
   const companyEvents = Array.isArray(companyEventData?.companyEvents) ? companyEventData.companyEvents : [];
@@ -2527,8 +2528,48 @@ async function renderSettings() {
         </div>
       </form>
       <hr>
-      <h3 class="h6 mb-3">已建立的公司活動</h3>
+      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+        <h3 class="h6 mb-0">已建立的公司活動</h3>
+        <span class="small muted" id="companyEventResultCount"></span>
+      </div>
+      <div class="row g-2 mb-3" aria-label="公司活動篩選條件">
+        <div class="col-6 col-lg-2">
+          <label class="form-label" for="companyEventFilterYear">年度</label>
+          <input class="form-control" id="companyEventFilterYear" type="number" min="2000" max="2100" value="${currentYear}">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label" for="companyEventFilterMonth">月份</label>
+          <select class="form-select" id="companyEventFilterMonth">
+            <option value="">全年</option>
+            ${Array.from({ length: 12 }, (_, index) => `<option value="${String(index + 1).padStart(2, "0")}">${index + 1} 月</option>`).join("")}
+          </select>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label" for="companyEventFilterCategory">類型</label>
+          <select class="form-select" id="companyEventFilterCategory">
+            <option value="">全部類型</option>
+            ${companyEventCategoryOptions("")}
+          </select>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label" for="companyEventFilterStatus">狀態</label>
+          <select class="form-select" id="companyEventFilterStatus">
+            <option value="">全部狀態</option>
+            <option value="active">顯示中</option>
+            <option value="inactive">已暫停</option>
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label" for="companyEventFilterSearch">搜尋</label>
+          <input class="form-control" id="companyEventFilterSearch" type="search" placeholder="搜尋標題或公告內容">
+        </div>
+      </div>
       <div id="companyEventList" aria-live="polite"></div>
+      <nav class="d-flex justify-content-between align-items-center gap-3 mt-3" aria-label="公司活動分頁">
+        <button class="btn btn-outline-secondary btn-sm" id="companyEventPrevPage" type="button">上一頁</button>
+        <span class="small muted" id="companyEventPageStatus"></span>
+        <button class="btn btn-outline-secondary btn-sm" id="companyEventNextPage" type="button">下一頁</button>
+      </nav>
     </section>`;
 
   qs("#settingsForm").addEventListener("submit", async (event) => {
@@ -2567,6 +2608,8 @@ function companyEventCategoryOptions(selected) {
 
 function setupCompanyEventAdmin(initialEvents) {
   let events = [...initialEvents].sort(compareCompanyEvents);
+  let page = 1;
+  const pageSize = 10;
   const form = qs("#companyEventForm");
   const allDay = qs("#companyEventAllDay");
   const startTime = qs("#companyEventStartTime");
@@ -2596,12 +2639,63 @@ function setupCompanyEventAdmin(initialEvents) {
   }
 
   function renderList() {
-    qs("#companyEventList").innerHTML = events.length
-      ? `<div class="company-event-admin-list">${events.map(companyEventAdminRow).join("")}</div>`
-      : '<div class="muted py-3">尚未建立公司活動。</div>';
+    const month = qs("#companyEventFilterMonth").value;
+    const category = qs("#companyEventFilterCategory").value;
+    const status = qs("#companyEventFilterStatus").value;
+    const keyword = qs("#companyEventFilterSearch").value.trim().toLocaleLowerCase("zh-Hant");
+    const filtered = events.filter((item) => {
+      const overlapsMonth = !month || (item.startDate.slice(0, 7) <= `${qs("#companyEventFilterYear").value}-${month}`
+        && item.endDate.slice(0, 7) >= `${qs("#companyEventFilterYear").value}-${month}`);
+      const matchesCategory = !category || item.category === category;
+      const matchesStatus = !status
+        || (status === "active" && item.isActive !== false)
+        || (status === "inactive" && item.isActive === false);
+      const haystack = `${item.title} ${item.description || ""}`.toLocaleLowerCase("zh-Hant");
+      return overlapsMonth && matchesCategory && matchesStatus && (!keyword || haystack.includes(keyword));
+    });
+    const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+    page = Math.min(page, pageCount);
+    const visibleEvents = filtered.slice((page - 1) * pageSize, page * pageSize);
+    qs("#companyEventList").innerHTML = visibleEvents.length
+      ? `<div class="company-event-admin-list">${visibleEvents.map(companyEventAdminRow).join("")}</div>`
+      : '<div class="muted py-3">目前篩選條件沒有公司活動。</div>';
+    qs("#companyEventResultCount").textContent = `共 ${filtered.length} 筆`;
+    qs("#companyEventPageStatus").textContent = `第 ${page} / ${pageCount} 頁`;
+    qs("#companyEventPrevPage").disabled = page <= 1;
+    qs("#companyEventNextPage").disabled = page >= pageCount;
+  }
+
+  async function reloadEvents(year = qs("#companyEventFilterYear").value) {
+    const normalizedYear = /^\d{4}$/.test(String(year)) ? String(year) : String(new Date().getFullYear());
+    qs("#companyEventFilterYear").value = normalizedYear;
+    qs("#companyEventList").innerHTML = '<div class="muted py-3">正在載入活動…</div>';
+    const result = await callSecureFunction("getCompanyEvents", { year: normalizedYear });
+    events = Array.isArray(result?.companyEvents) ? result.companyEvents.sort(compareCompanyEvents) : [];
+    page = 1;
+    renderList();
   }
 
   allDay.addEventListener("change", updateTimeFields);
+  ["#companyEventFilterMonth", "#companyEventFilterCategory", "#companyEventFilterStatus", "#companyEventFilterSearch"]
+    .forEach((selector) => qs(selector).addEventListener("input", () => {
+      page = 1;
+      renderList();
+    }));
+  qs("#companyEventFilterYear").addEventListener("change", async (event) => {
+    try {
+      await reloadEvents(event.target.value);
+    } catch (error) {
+      showToast(`公司活動載入失敗：${error.message}`, "danger");
+    }
+  });
+  qs("#companyEventPrevPage").addEventListener("click", () => {
+    page = Math.max(1, page - 1);
+    renderList();
+  });
+  qs("#companyEventNextPage").addEventListener("click", () => {
+    page += 1;
+    renderList();
+  });
   qs("#companyEventCancelBtn").addEventListener("click", resetForm);
   qs("#companyEventList").addEventListener("click", async (event) => {
     const editButton = event.target.closest("[data-company-event-edit]");
@@ -2629,8 +2723,7 @@ function setupCompanyEventAdmin(initialEvents) {
     if (!window.confirm(`確定要刪除「${selected.title}」嗎？刪除後將不再顯示於行事曆。`)) return;
     try {
       await callSecureFunction("deleteCompanyEvent", { eventId: selected.id });
-      events = events.filter((item) => item.id !== selected.id);
-      renderList();
+      await reloadEvents();
       if (qs("#companyEventId").value === selected.id) resetForm();
       showToast("公司活動已刪除", "success");
     } catch (error) {
@@ -2658,10 +2751,11 @@ function setupCompanyEventAdmin(initialEvents) {
     }
     try {
       const result = await callSecureFunction("saveCompanyEvent", payload);
-      events = events.filter((item) => item.id !== result.event.id);
-      events.push(result.event);
-      events.sort(compareCompanyEvents);
-      renderList();
+      const savedYear = result.event.startDate.slice(0, 4);
+      if (savedYear !== qs("#companyEventFilterYear").value) {
+        qs("#companyEventFilterYear").value = savedYear;
+      }
+      await reloadEvents(savedYear);
       resetForm();
       showToast(payload.eventId ? "公司活動已更新" : "公司活動已新增", "success");
     } catch (error) {

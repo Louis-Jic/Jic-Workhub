@@ -74,11 +74,16 @@ exports.getEmployeeDirectory = callable(async function getEmployeeDirectory(requ
 exports.getCompanyEvents = callable(async function getCompanyEvents(request) {
   const admin = await profileFor(request.auth.uid);
   requireAdmin(admin);
+  const requestedYear = cleanText(request.data?.year, 4);
+  const year = /^\d{4}$/.test(requestedYear) ? requestedYear : "";
+  const yearStart = year ? `${year}-01-01` : "";
+  const yearEnd = year ? `${year}-12-31` : "";
   const snap = await db.collection("companyEvents").get();
   return {
     companyEvents: snap.docs
       .map(publicCompanyEvent)
       .filter((event) => event.title && event.startDate && event.endDate)
+      .filter((event) => !year || (event.startDate <= yearEnd && event.endDate >= yearStart))
       .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.title.localeCompare(b.title, "zh-Hant"))
   };
 });

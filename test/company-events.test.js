@@ -15,6 +15,16 @@ test("系統設定提供管理員公司活動新增、編輯與刪除功能", ()
   assert.match(adminSource, /公司活動與公告/);
 });
 
+test("公司活動清單可依年度與條件篩選並分頁", () => {
+  assert.match(adminSource, /id="companyEventFilterYear"/);
+  assert.match(adminSource, /id="companyEventFilterMonth"/);
+  assert.match(adminSource, /id="companyEventFilterCategory"/);
+  assert.match(adminSource, /id="companyEventFilterStatus"/);
+  assert.match(adminSource, /id="companyEventFilterSearch"/);
+  assert.match(adminSource, /const pageSize = 10/);
+  assert.match(functionsSource, /event\.startDate <= yearEnd && event\.endDate >= yearStart/);
+});
+
 test("公司活動類型在系統設定渲染前完成初始化", () => {
   const labelsIndex = adminSource.indexOf("const COMPANY_EVENT_LABELS");
   const settingsDispatchIndex = adminSource.indexOf('if (mode === "settings") await renderSettings()');
