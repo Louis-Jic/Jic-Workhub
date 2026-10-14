@@ -152,7 +152,9 @@ async function renderAttendanceSecurity(profile, content) {
 
 function caseHtml(row, profile, isOpen = false) {
   const pendingReview = row.status === "pending_manager_review";
-  const correctionTime = row.requestedTime || timeMentionedInReason(row.reason) || row.workStart || "09:00";
+  const missingType = row.missingType === "checkOut" ? "checkOut" : "checkIn";
+  const correctionTime = row.requestedTime || timeMentionedInReason(row.reason)
+    || (missingType === "checkOut" ? row.workEnd || "18:00" : row.workStart || "09:00");
   const group = pendingReview || row.status === "needs_more_info" ? "attention" : "completed";
   const searchableText = [
     row.date, row.userName, row.userId, row.department, row.shiftName, row.workStart,
@@ -169,28 +171,28 @@ function caseHtml(row, profile, isOpen = false) {
       <span class="exception-case-date">${escapeHtml(row.date)}</span>
       <span class="exception-case-person">
         <strong>${escapeHtml(row.userName || row.userId)}</strong>
-        <small>${escapeHtml(row.department || "未分部門")} · ${escapeHtml(row.shiftName || row.workStart || "班別")}</small>
+        <small>${escapeHtml(row.department || "未分部門")} · ${escapeHtml(row.shiftName || row.workStart || "班別")} · ${missingType === "checkOut" ? "漏簽退" : "漏簽到"}</small>
       </span>
       <span class="badge text-bg-${statusTone}">${escapeHtml(statusLabels[row.status] || row.status)}</span>
       <span class="exception-case-toggle" aria-hidden="true">查看詳情</span>
     </summary>
     <div class="exception-case-body">
       <div class="exception-case-facts">
-        <div><span>員工原因</span><strong>${escapeHtml(row.reason || "尚未填寫")}</strong></div>
+        <div><span>${missingType === "checkOut" ? "未簽退原因" : "未簽到原因"}</span><strong>${escapeHtml(row.reason || "尚未填寫")}</strong></div>
         ${row.laterPunchAt ? `<div><span>後續打卡</span><strong>${fmtDateTime(row.laterPunchAt)}（${row.laterPunchType === "checkIn" ? "簽到" : "簽退"}）</strong></div>` : ""}
         ${row.reviewNote ? `<div><span>審核備註</span><strong>${escapeHtml(row.reviewNote)}</strong></div>` : ""}
       </div>
     ${pendingReview ? `<div class="row g-2 mt-1">
-      <div class="col-md-2"><input class="form-control form-control-sm" type="time" data-correction-time value="${escapeHtml(correctionTime)}" aria-label="補登簽到時間"></div>
+      <div class="col-md-2"><input class="form-control form-control-sm" type="time" data-correction-time value="${escapeHtml(correctionTime)}" aria-label="補登${missingType === "checkOut" ? "簽退" : "簽到"}時間"></div>
       <div class="col-md-5"><input class="form-control form-control-sm" data-review-note placeholder="審核備註或要求補充內容"></div>
       <div class="col-md-5 d-flex gap-1 flex-wrap">
-        <button class="btn btn-sm btn-success" data-review-decision="approved">核准並補登</button>
+        <button class="btn btn-sm btn-success" data-review-decision="approved">核准並補${missingType === "checkOut" ? "簽退" : "簽到"}</button>
         <button class="btn btn-sm btn-outline-warning" data-review-decision="needs_more_info">要求補充</button>
         <button class="btn btn-sm btn-outline-danger" data-review-decision="rejected">駁回</button>
       </div>
     </div>` : ""}
     ${row.status === "approved" && !row.manualCorrectionRecordId ? `<div class="d-flex gap-2 align-items-center mt-2" data-approved-repair>
-      <input class="form-control form-control-sm" style="max-width: 9rem" type="time" value="${escapeHtml(correctionTime)}" aria-label="補回簽到時間">
+      <input class="form-control form-control-sm" style="max-width: 9rem" type="time" value="${escapeHtml(correctionTime)}" aria-label="補回${missingType === "checkOut" ? "簽退" : "簽到"}時間">
       <button class="btn btn-sm btn-outline-primary" type="button" data-repair-approved>補回出勤表</button>
     </div>` : ""}
     ${profile.role === "admin" && ["approved", "rejected", "overdue", "pending_manager_review"].includes(row.status) ? manualCorrectionHtml(row) : ""}
@@ -268,10 +270,11 @@ function bindAttendanceSecurityPersistence(host) {
 }
 
 function manualCorrectionHtml(row) {
+  const missingType = row.missingType === "checkOut" ? "checkOut" : "checkIn";
   return `<details class="mt-2"><summary class="small text-primary">管理員補登打卡</summary>
     <form class="row g-2 mt-1" data-manual-form>
-      <div class="col-md-2"><select class="form-select form-select-sm" name="type"><option value="checkIn">補簽到</option><option value="checkOut">補簽退</option></select></div>
-      <div class="col-md-2"><input class="form-control form-control-sm" type="time" name="time" value="${row.workStart || "09:00"}" required></div>
+      <div class="col-md-2"><select class="form-select form-select-sm" name="type"><option value="checkIn"${missingType === "checkIn" ? " selected" : ""}>補簽到</option><option value="checkOut"${missingType === "checkOut" ? " selected" : ""}>補簽退</option></select></div>
+      <div class="col-md-2"><input class="form-control form-control-sm" type="time" name="time" value="${escapeHtml(missingType === "checkOut" ? row.workEnd || "18:00" : row.workStart || "09:00")}" required></div>
       <div class="col-md-6"><input class="form-control form-control-sm" name="reason" placeholder="補登原因（必填）" required></div>
       <input type="hidden" name="userId" value="${escapeHtml(row.userId)}"><input type="hidden" name="date" value="${escapeHtml(row.date)}">
       <div class="col-md-2 d-grid"><button class="btn btn-sm btn-outline-primary">建立補登</button></div>

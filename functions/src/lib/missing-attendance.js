@@ -1,6 +1,6 @@
 "use strict";
 
-const { isRestDay, taipeiDateTime, todayKeyTaipei } = require("../core");
+const { effectiveWorkEnd, isRestDay, taipeiDateTime, todayKeyTaipei } = require("../core");
 
 function recentDates(now, days = 31) {
   const today = todayKeyTaipei(now);
@@ -12,12 +12,25 @@ function recentDates(now, days = 31) {
 }
 
 function selectMissingAttendanceCandidates({ dates, now, employee, settings, shift, attendance, leaves, leaveCoversShift }) {
-  return dates.filter((date) => !isRestDay(date, settings)).filter((date) => {
+  return dates.filter((date) => !isRestDay(date, settings)).flatMap((date) => {
+    const dayRows = attendance.filter((row) => row.date === date);
+    const hasCheckIn = dayRows.some((row) => row.type === "checkIn");
+    const hasCheckOut = dayRows.some((row) => row.type === "checkOut");
+    const workEnd = effectiveWorkEnd(date, shift, settings);
+    if (hasCheckIn && !hasCheckOut) {
+      const dueAt = new Date(taipeiDateTime(date, workEnd).getTime() + Number(settings.punchWindowMinutes || 13) * 60000);
+      return now >= dueAt ? [{ date, missingType: "checkOut", shiftName: shift.name, workStart: shift.workStart, workEnd }] : [];
+    }
     const dueAt = new Date(taipeiDateTime(date, shift.workStart).getTime() + Number(settings.lateGraceMinutes || 0) * 60000);
-    return now >= dueAt
-      && !attendance.some((row) => row.date === date && row.type === "checkIn")
-      && !leaveCoversShift(leaves, employee.id, date, shift);
-  }).map((date) => ({ date, shiftName: shift.name, workStart: shift.workStart }));
+    return !hasCheckIn && now >= dueAt && !leaveCoversShift(leaves, employee.id, date, shift)
+      ? [{ date, missingType: "checkIn", shiftName: shift.name, workStart: shift.workStart, workEnd }]
+      : [];
+  });
 }
 
-module.exports = { recentDates, selectMissingAttendanceCandidates };
+function validCheckoutCorrectionTime(rows, date, time) {
+  const latestCheckIn = [...rows].reverse().find((row) => row.type === "checkIn");
+  return Boolean(latestCheckIn && taipeiDateTime(date, time) > latestCheckIn.timestamp);
+}
+
+module.exports = { recentDates, selectMissingAttendanceCandidates, validCheckoutCorrectionTime };

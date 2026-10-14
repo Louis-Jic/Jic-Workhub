@@ -563,13 +563,14 @@ function employeeExceptionCard(row, index, editable) {
   const statusClass = row.status === "overdue"
     ? "is-overdue"
     : row.status === "approved" ? "is-approved" : row.status === "rejected" ? "is-rejected" : "";
-  const workStart = row.workStart || row.shiftName || "09:00";
-  return `<details class="attendance-exception-case ${statusClass}" data-case-date="${escapeHtml(row.date)}"${editable && index === 0 ? " open" : ""}>
+  const missingType = row.missingType === "checkOut" ? "checkOut" : "checkIn";
+  const scheduledTime = missingType === "checkOut" ? row.workEnd || "18:00" : row.workStart || "09:00";
+  return `<details class="attendance-exception-case ${statusClass}" data-case-date="${escapeHtml(row.date)}" data-missing-type="${missingType}"${editable && index === 0 ? " open" : ""}>
     <summary class="attendance-exception-summary">
       <time datetime="${escapeHtml(row.date)}">${formatExceptionDate(row.date)}</time>
       <span class="attendance-exception-title">
-        <strong>上班未打卡</strong>
-        <small>${escapeHtml(row.shiftName || "當日班別")} · 應到 ${escapeHtml(workStart)}</small>
+        <strong>${missingType === "checkOut" ? "下班未簽退" : "上班未簽到"}</strong>
+        <small>${escapeHtml(row.shiftName || "當日班別")} · ${missingType === "checkOut" ? "應退" : "應到"} ${escapeHtml(scheduledTime)}</small>
       </span>
       <span class="attendance-exception-status">${escapeHtml(status)}</span>
       <span class="attendance-exception-toggle" aria-hidden="true">展開</span>
@@ -579,18 +580,18 @@ function employeeExceptionCard(row, index, editable) {
       ${editable ? `<form data-exception-form>
         <div class="attendance-exception-fields">
           <label>
-            <span>未打卡原因</span>
+            <span>${missingType === "checkOut" ? "未簽退原因" : "未簽到原因"}</span>
             <select class="form-select" name="category" required>
               ${exceptionCategoryOptions(row.reasonCategory || "")}
             </select>
           </label>
           <label>
-            <span>實際到達時間</span>
-            <input class="form-control" type="time" name="requestedTime" value="${escapeHtml(row.requestedTime || row.workStart || "09:00")}" required>
+            <span>${missingType === "checkOut" ? "實際離開時間" : "實際到達時間"}</span>
+            <input class="form-control" type="time" name="requestedTime" value="${escapeHtml(row.requestedTime || scheduledTime)}" required>
           </label>
           <label class="attendance-exception-reason">
             <span>補充說明</span>
-            <textarea class="form-control" name="reason" maxlength="1000" rows="2" placeholder="請簡要說明未打卡原因" required>${escapeHtml(row.reason || "")}</textarea>
+            <textarea class="form-control" name="reason" maxlength="1000" rows="2" placeholder="請簡要說明漏打卡原因" required>${escapeHtml(row.reason || "")}</textarea>
           </label>
         </div>
         <div class="attendance-exception-actions">
@@ -599,7 +600,7 @@ function employeeExceptionCard(row, index, editable) {
         </div>
       </form>` : `<dl class="attendance-exception-facts">
         <div><dt>填報原因</dt><dd>${escapeHtml(exceptionCategoryLabels[row.reasonCategory] || row.reasonCategory || "未分類")}</dd></div>
-        <div><dt>實際到達</dt><dd>${escapeHtml(row.requestedTime || row.workStart || "-")}</dd></div>
+        <div><dt>${missingType === "checkOut" ? "實際離開" : "實際到達"}</dt><dd>${escapeHtml(row.requestedTime || scheduledTime)}</dd></div>
         <div><dt>補充說明</dt><dd>${escapeHtml(row.reason || "尚無說明")}</dd></div>
       </dl>`}
     </div>
@@ -608,12 +609,15 @@ function employeeExceptionCard(row, index, editable) {
 
 const dismissedStorageKey = `attendance-exception-declined:${profile.id}`;
 let initialExceptionPrompt = true;
-let latestCandidateDates = [];
+let latestCandidateKeys = [];
 
 function dismissedDates() {
   try {
     const stored = JSON.parse(localStorage.getItem(dismissedStorageKey) || "[]");
-    return new Set(Array.isArray(stored) ? stored.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)) : []);
+    return new Set(Array.isArray(stored) ? stored.flatMap((value) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return [`${value}:checkIn`];
+      return /^\d{4}-\d{2}-\d{2}:check(In|Out)$/.test(value) ? [value] : [];
+    }) : []);
   } catch {
     return new Set();
   }
@@ -627,7 +631,7 @@ async function renderExceptions() {
   const rows = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const candidateRows = (candidateResult.candidates || []).map((item) => ({ ...item, status: "pending_employee_reason" }));
-  latestCandidateDates = candidateRows.map((item) => item.date);
+  latestCandidateKeys = candidateRows.map((item) => `${item.date}:${item.missingType}`);
   const openRows = [
     ...rows.filter((row) => row.status === "needs_more_info"),
     ...candidateRows
@@ -650,7 +654,8 @@ async function renderExceptions() {
   qs("#exceptionList").innerHTML = groups.map(([name, groupRows, emptyText]) => `
     <div class="attendance-exception-list" data-exception-panel="${name}"${name === defaultTab ? "" : " hidden"}>
       ${groupRows.length
-        ? groupRows.slice(0, 8).map((row, index) => employeeExceptionCard(row, index, name === "action")).join("")
+        ? (name === "action" ? groupRows : groupRows.slice(0, 8))
+          .map((row, index) => employeeExceptionCard(row, index, name === "action")).join("")
         : `<div class="attendance-exception-empty">${escapeHtml(emptyText)}</div>`}
     </div>
   `).join("");
@@ -686,6 +691,7 @@ async function renderExceptions() {
       try {
         await callSecureFunction("submitExceptionReason", {
           date: card.dataset.caseDate,
+          missingType: card.dataset.missingType,
           category: form.elements.category.value,
           requestedTime: form.elements.requestedTime.value,
           reason: form.elements.reason.value.trim()
@@ -701,9 +707,9 @@ async function renderExceptions() {
 
   if (initialExceptionPrompt) {
     initialExceptionPrompt = false;
-    const unanswered = candidateRows.filter((row) => !dismissedDates().has(row.date));
+    const unanswered = candidateRows.filter((row) => !dismissedDates().has(`${row.date}:${row.missingType}`));
     if (unanswered.length) {
-      qs("#exceptionDecisionText").textContent = `最近有 ${unanswered.length} 個未打卡日期。現在要申請原因並送交主管審核嗎？`;
+      qs("#exceptionDecisionText").textContent = `最近有 ${unanswered.length} 筆未簽到或未簽退紀錄。現在要申請原因並送交主管審核嗎？`;
       qs("#exceptionDecisionDialog").showModal();
     }
   }
@@ -718,8 +724,8 @@ qs("#exceptionApplyBtn").addEventListener("click", () => {
 qs("#exceptionDeclineBtn").addEventListener("click", () => {
   try {
     const keepSince = new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
-    const retained = [...dismissedDates()].filter((date) => date >= keepSince);
-    localStorage.setItem(dismissedStorageKey, JSON.stringify([...new Set([...retained, ...latestCandidateDates])]));
+    const retained = [...dismissedDates()].filter((key) => key.slice(0, 10) >= keepSince);
+    localStorage.setItem(dismissedStorageKey, JSON.stringify([...new Set([...retained, ...latestCandidateKeys])]));
   } catch (error) {
     showToast(error.message, "danger");
     return;

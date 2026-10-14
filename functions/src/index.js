@@ -5,7 +5,7 @@ const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestor
 const { HttpsError } = require("firebase-functions/v2/https");
 const { createSecurityRuntime } = require("./lib/security-runtime");
 const { createAdminHandlers } = require("./lib/admin-service");
-const { recentDates, selectMissingAttendanceCandidates } = require("./lib/missing-attendance");
+const { recentDates, selectMissingAttendanceCandidates, validCheckoutCorrectionTime } = require("./lib/missing-attendance");
 const {
   canPunchOutsideWindow,
   calculateWorkHours,
@@ -383,8 +383,15 @@ exports.punch = callable(async function punch(request) {
   const status = hasEarlierCheckIn
     ? "normal"
     : resolveStatusWithLeaves(type, now, date, shift, settings, approvedLeaves);
-  const exceptionRef = db.doc(`attendanceExceptions/${date}_${employee.id}`);
-  const exceptionSnap = await exceptionRef.get();
+  const exceptionRef = db.doc(`attendanceExceptions/${date}_${employee.id}${type === "checkOut" ? "_checkOut" : ""}`);
+  let exceptionSnap = await exceptionRef.get();
+  if (!exceptionSnap.exists && type === "checkOut") {
+    const legacyRef = db.doc(`attendanceExceptions/${date}_${employee.id}`);
+    const legacySnap = await legacyRef.get();
+    if (legacySnap.exists) {
+      exceptionSnap = legacySnap;
+    }
+  }
   const recordRef = db.collection("attendance").doc();
   const guardRef = db.doc(`punchGuards/${date}_${employee.id}`);
   await db.runTransaction(async (transaction) => {
@@ -421,7 +428,7 @@ exports.punch = callable(async function punch(request) {
     });
     transaction.set(guardRef, { userId: employee.id, date, lastType: type, updatedAt: FieldValue.serverTimestamp() });
     if (exceptionSnap.exists) {
-      transaction.set(exceptionRef, { laterPunchAt: Timestamp.fromDate(now), laterPunchType: type, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      transaction.set(exceptionSnap.ref, { laterPunchAt: Timestamp.fromDate(now), laterPunchType: type, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     }
   });
   await rebuildAttendanceDaily(employee, date, settings);
@@ -441,13 +448,17 @@ exports.submitExceptionReason = callable(async function submitExceptionReason(re
     throw new HttpsError("failed-precondition", "此帳號目前不適用未打卡申請。");
   }
   const date = cleanText(request.data?.date, 10);
-  const caseId = `${date}_${employee.id}`;
+  if (request.data?.missingType && !["checkIn", "checkOut"].includes(request.data.missingType)) {
+    throw new HttpsError("invalid-argument", "漏打卡類型無效。");
+  }
+  const missingType = request.data?.missingType === "checkOut" ? "checkOut" : "checkIn";
+  const caseId = `${date}_${employee.id}${missingType === "checkOut" ? "_checkOut" : ""}`;
   const category = cleanText(request.data?.category, 40);
   const reason = cleanText(request.data?.reason, 1000);
   const requestedTime = cleanText(request.data?.requestedTime, 5);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["forgot", "device_failure", "fieldwork", "leave_pending", "other"].includes(category)
     || !reason || !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedTime)) {
-    throw new HttpsError("invalid-argument", "請選擇原因分類，並填寫實際到達時間與說明。");
+    throw new HttpsError("invalid-argument", "請選擇原因分類，並填寫實際時間與說明。");
   }
   const ref = db.doc(`attendanceExceptions/${caseId}`);
   const snap = await ref.get();
@@ -460,7 +471,15 @@ exports.submitExceptionReason = callable(async function submitExceptionReason(re
   const shift = normalizedShift(employee, settings);
   if (snap.data()?.status !== "needs_more_info") {
     const candidates = await missingAttendanceCandidates(employee, settings, [date]);
-    if (!candidates.length) throw new HttpsError("failed-precondition", "該日期不符合未打卡申請條件。");
+    if (!candidates.some((item) => item.missingType === missingType)) {
+      throw new HttpsError("failed-precondition", "該日期不符合這項漏打卡申請條件。");
+    }
+  }
+  if (missingType === "checkOut") {
+    const rows = await recordsForDate(employee.id, date);
+    if (!validCheckoutCorrectionTime(rows, date, requestedTime)) {
+      throw new HttpsError("invalid-argument", "實際離開時間必須晚於當日簽到時間。");
+    }
   }
   const now = new Date();
   await db.runTransaction(async (transaction) => {
@@ -479,7 +498,10 @@ exports.submitExceptionReason = callable(async function submitExceptionReason(re
         shiftId: shift.id,
         shiftName: shift.name,
         workStart: shift.workStart,
-        dueAt: Timestamp.fromDate(new Date(taipeiDateTime(date, shift.workStart).getTime() + Number(settings.lateGraceMinutes || 0) * 60000)),
+        workEnd: effectiveWorkEnd(date, shift, settings),
+        missingType,
+        dueAt: Timestamp.fromDate(new Date(taipeiDateTime(date, missingType === "checkOut" ? effectiveWorkEnd(date, shift, settings) : shift.workStart).getTime()
+          + Number(missingType === "checkOut" ? settings.punchWindowMinutes || 13 : settings.lateGraceMinutes || 0) * 60000)),
         createdAt: FieldValue.serverTimestamp()
       }),
       reasonCategory: category,
@@ -491,7 +513,7 @@ exports.submitExceptionReason = callable(async function submitExceptionReason(re
       timeline: FieldValue.arrayUnion({ action: "reason_submitted", actorId: employee.id, at: now.toISOString() })
     }, { merge: true });
   });
-  await audit("attendance_exception.reason_submitted", employee, { targetUserId: employee.id, department: employee.department, caseId, category });
+  await audit("attendance_exception.reason_submitted", employee, { targetUserId: employee.id, department: employee.department, caseId, category, missingType });
   return { status: "pending_manager_review" };
 });
 
@@ -505,8 +527,12 @@ exports.reviewException = callable(async function reviewException(request) {
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "找不到未打卡案件。");
   const exception = snap.data();
+  const missingType = exception.missingType === "checkOut" ? "checkOut" : "checkIn";
   const employee = await profileFor(exception.userId);
   requireReviewer(reviewer, employee);
+  if (exception.status !== "pending_manager_review" && !(exception.status === "approved" && decision === "approved")) {
+    throw new HttpsError("failed-precondition", "只有已送審案件可以審核；已核准案件僅能補回出勤紀錄。");
+  }
   const status = decision === "needs_more_info" ? "needs_more_info" : decision;
   let correctionRecordId = exception.manualCorrectionRecordId || "";
   let correctionTime = "";
@@ -514,28 +540,33 @@ exports.reviewException = callable(async function reviewException(request) {
     correctionTime = cleanText(request.data?.correctionTime, 5)
       || cleanText(exception.requestedTime, 5)
       || timeMentionedInReason(exception.reason)
-      || cleanText(exception.workStart, 5)
-      || "09:00";
+      || cleanText(missingType === "checkOut" ? exception.workEnd : exception.workStart, 5)
+      || (missingType === "checkOut" ? "18:00" : "09:00");
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(correctionTime)) {
       throw new HttpsError("invalid-argument", "補登時間格式不正確。");
     }
     const rows = await recordsForDate(employee.id, exception.date);
-    const existingCheckIn = rows.find((row) => row.type === "checkIn");
-    if (existingCheckIn) {
-      correctionRecordId = existingCheckIn.id;
+    const existingPunch = rows.find((row) => row.type === missingType);
+    if (missingType === "checkOut") {
+      if (!validCheckoutCorrectionTime(rows, exception.date, correctionTime)) {
+        throw new HttpsError("failed-precondition", "補登簽退時間必須晚於當日簽到時間。");
+      }
+    }
+    if (existingPunch) {
+      correctionRecordId = existingPunch.id;
     } else {
       const settingsSnap = await db.doc("workSettings/default").get();
       const settings = settingsSnap.exists ? settingsSnap.data() : {};
       const shift = normalizedShift(employee, settings);
       const timestamp = taipeiDateTime(exception.date, correctionTime);
       const approvedLeaves = await approvedLeavesForDate(employee.id, exception.date);
-      const correctionRef = db.doc(`attendance/exception_${caseId}_checkIn`);
+      const correctionRef = db.doc(`attendance/exception_${caseId}_${missingType}`);
       correctionRecordId = correctionRef.id;
       await correctionRef.set({
         userId: employee.id,
         userName: employee.name || employee.email || "",
         department: employee.department || "",
-        type: "checkIn",
+        type: missingType,
         shiftId: shift.id,
         shiftName: shift.name,
         workStart: shift.workStart,
@@ -547,10 +578,10 @@ exports.reviewException = callable(async function reviewException(request) {
         latitude: null,
         longitude: null,
         locationDecision: "manager_approved_exception",
-        status: resolveStatusWithLeaves("checkIn", timestamp, exception.date, shift, settings, approvedLeaves),
+        status: resolveStatusWithLeaves(missingType, timestamp, exception.date, shift, settings, approvedLeaves),
         source: "manager_approved_exception",
         manualCorrection: true,
-        correctionReason: exception.reason || note || "主管核准未打卡原因",
+        correctionReason: exception.reason || note || (missingType === "checkOut" ? "主管核准漏簽退原因" : "主管核准未打卡原因"),
         correctedBy: reviewer.id,
         correctedByName: reviewer.name || reviewer.email || "",
         exceptionId: caseId,
@@ -563,6 +594,7 @@ exports.reviewException = callable(async function reviewException(request) {
         recordId: correctionRecordId,
         date: exception.date,
         time: correctionTime,
+        type: missingType,
         caseId
       });
     }
@@ -577,7 +609,7 @@ exports.reviewException = callable(async function reviewException(request) {
     updatedAt: FieldValue.serverTimestamp(),
     timeline: FieldValue.arrayUnion({ action: `review_${decision}`, actorId: reviewer.id, at: new Date().toISOString(), note })
   });
-  await audit("attendance_exception.reviewed", reviewer, { targetUserId: employee.id, department: employee.department, caseId, decision, note });
+  await audit("attendance_exception.reviewed", reviewer, { targetUserId: employee.id, department: employee.department, caseId, decision, note, missingType });
   return { status };
 });
 
@@ -742,6 +774,6 @@ exports.getMissingAttendanceCandidates = callable(async function getMissingAtten
   const existingSnap = await db.collection("attendanceExceptions").where("userId", "==", employee.id).get();
   const formalDates = new Set(existingSnap.docs
     .filter((item) => !["pending_employee_reason", "overdue"].includes(item.data().status))
-    .map((item) => item.data().date));
-  return { candidates: candidates.filter((item) => !formalDates.has(item.date)) };
+    .map((item) => `${item.data().date}:${item.data().missingType === "checkOut" ? "checkOut" : "checkIn"}`));
+  return { candidates: candidates.filter((item) => !formalDates.has(`${item.date}:${item.missingType}`)) };
 });
