@@ -26,6 +26,7 @@ import {
 import { callSecureFunction } from "./app.js";
 import { renderSecurityAdmin } from "./security-admin.js?v=20260724-5";
 import { correctionDisplayTime } from "./attendance-correction.js";
+import { findSpecialClosure } from "./work-schedule.js";
 
 const mode = document.body.dataset.adminMode;
 const titleMap = {
@@ -2061,8 +2062,7 @@ function scheduledWorkHours(date, shift, settings) {
 }
 
 function specialClosureForDate(date, settings) {
-  return (Array.isArray(settings.specialClosureDates) ? settings.specialClosureDates : [])
-    .find((item) => item?.date === date && /^\d{2}:\d{2}$/.test(item.closeTime || ""));
+  return findSpecialClosure(date, settings.specialClosureDates);
 }
 
 function workMinutesInRange(start, end, blockStart, blockEnd, lunchStart, lunchEnd) {

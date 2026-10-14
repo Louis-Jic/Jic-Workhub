@@ -22,6 +22,7 @@ import {
 import { callSecureFunction } from "./app.js";
 import { acquirePunchLocation } from "./services/geolocation-service.js";
 import { submitPunch } from "./services/attendance-service.js";
+import { findSpecialClosure } from "./work-schedule.js";
 
 mountPageShell("出勤打卡", "GPS 簽到簽退與每日工時判定");
 const profile = await requireAuth();
@@ -301,8 +302,7 @@ function scheduledWorkHours(date, shift) {
 }
 
 function specialClosureForDate(date) {
-  return (Array.isArray(settings.specialClosureDates) ? settings.specialClosureDates : [])
-    .find((item) => item?.date === date && /^\d{2}:\d{2}$/.test(item.closeTime || ""));
+  return findSpecialClosure(date, settings.specialClosureDates);
 }
 
 function todayClosureText() {

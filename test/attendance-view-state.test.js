@@ -29,5 +29,5 @@ test("未打卡審核更新後保留篩選與案件展開狀態", () => {
 });
 
 test("出勤頁載入新版狀態保存程式", () => {
-  assert.match(attendanceHtml, /admin\.js\?v=20261014-1/);
+  assert.match(attendanceHtml, /admin\.js\?v=20261014-2/);
 });
