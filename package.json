@@ -10,6 +10,7 @@
     "build:production": "vite build --mode production",
     "preview": "vite preview --host 127.0.0.1 --port 5500",
     "emulators": "node scripts/start-emulators.mjs",
+    "emulators:export": "node scripts/export-emulators.mjs",
     "emulators:seed": "npm --prefix functions run seed:emulator",
     "emulators:sync-production": "npm --prefix functions run sync:emulator:production",
     "test": "node --test test/*.test.js",

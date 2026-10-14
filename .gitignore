@@ -4,6 +4,7 @@ node_modules/
 dist/
 dist-staging/
 .firebase/
+firebase-export-*/
 .env
 .env.local
 .env.*.local
