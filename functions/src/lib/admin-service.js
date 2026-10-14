@@ -271,8 +271,9 @@ function createAdminHandlers({
         ...(collectionName === "overtimeRequests" ? {
           hours,
           lunchDeducted: true,
-          hoursCalculation: "lunch_excluded_capped",
-          maxOvertimeHours: 8
+          hoursCalculation: "lunch_excluded_daily_capped",
+          maxOvertimeHoursPerDay: 8,
+          maxOvertimeHours: FieldValue.delete()
         } : {}),
         approvedBy: reviewer.id,
         approvedByName: reviewer.name || reviewer.email || "",
@@ -333,8 +334,9 @@ function createAdminHandlers({
       transaction.update(requestRef, {
         hours: newHours,
         lunchDeducted: true,
-        hoursCalculation: "lunch_excluded_capped",
-        maxOvertimeHours: 8,
+        hoursCalculation: "lunch_excluded_daily_capped",
+        maxOvertimeHoursPerDay: 8,
+        maxOvertimeHours: FieldValue.delete(),
         hoursRecalculatedBy: reviewer.id,
         hoursRecalculatedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()

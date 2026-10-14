@@ -206,23 +206,24 @@ function calculateHoursExcludingLunch(startValue, endValue, settings = {}) {
   const firstDate = todayKeyTaipei(start);
   const lastDate = todayKeyTaipei(end);
   let dateKey = firstDate;
-  let lunchMinutes = 0;
+  let totalHours = 0;
   while (dateKey <= lastDate) {
-    lunchMinutes += overlapMinutes(
-      start,
-      end,
+    const nextDate = new Date(`${dateKey}T00:00:00.000Z`);
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const nextDateKey = nextDate.toISOString().slice(0, 10);
+    const segmentStart = new Date(Math.max(start.getTime(), taipeiDateTime(dateKey, "00:00").getTime()));
+    const segmentEnd = new Date(Math.min(end.getTime(), taipeiDateTime(nextDateKey, "00:00").getTime()));
+    const lunchMinutes = overlapMinutes(
+      segmentStart,
+      segmentEnd,
       taipeiDateTime(dateKey, settings.lunchStart || "12:00"),
       taipeiDateTime(dateKey, settings.lunchEnd || "13:00")
     );
-    const nextDate = new Date(`${dateKey}T00:00:00.000Z`);
-    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-    dateKey = nextDate.toISOString().slice(0, 10);
+    const grossMinutes = Math.max(0, (segmentEnd.getTime() - segmentStart.getTime()) / 60000);
+    totalHours += Math.min(8, Math.max(0, grossMinutes - lunchMinutes) / 60);
+    dateKey = nextDateKey;
   }
-
-  const grossMinutes = (end.getTime() - start.getTime()) / 60000;
-  const calculatedHours = Math.max(0, grossMinutes - lunchMinutes) / 60;
-  const maxHours = 8;
-  return Number(Math.min(calculatedHours, maxHours).toFixed(2));
+  return Number(totalHours.toFixed(2));
 }
 
 function earliestCheckInsByUserDate(records) {

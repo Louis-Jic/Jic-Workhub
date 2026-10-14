@@ -13,5 +13,5 @@ test("加班申請單維持 A4 並使用精簡的表格列高", () => {
   assert.match(source, /\.description \{ height: 23mm;/);
   assert.match(source, /\.signature \{ text-align: center; \}/);
   assert.doesNotMatch(source, /\.signature \{[^}]*height:/);
-  assert.match(html, /overtime\.js\?v=20261014-2/);
+  assert.match(html, /overtime\.js\?v=20261014-3/);
 });

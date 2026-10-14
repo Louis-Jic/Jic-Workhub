@@ -117,6 +117,34 @@ test("non-admin cannot permanently delete attendance", async () => {
   assert.equal(db.documents.has("attendance/r1"), true);
 });
 
+test("approving two-day overtime records sixteen hours and credits compensatory leave", async () => {
+  const db = fakeFirestore({
+    "overtimeRequests/ot1": {
+      userId: "u1",
+      department: "IT",
+      startTime: new Date("2026-10-17T01:00:00Z"),
+      endTime: new Date("2026-10-18T10:00:00Z"),
+      hours: 8,
+      convertToCompTime: true,
+      status: "pending"
+    },
+    "users/u1": { name: "員工", department: "IT", compensatoryLeaveHours: 0 },
+    "workSettings/default": { lunchStart: "12:00", lunchEnd: "13:00" }
+  });
+  const handlers = handlersFor(db, { daily: [], guard: [] });
+
+  await handlers.reviewHrRequest({
+    auth: { uid: "actor" },
+    data: { collectionName: "overtimeRequests", requestId: "ot1", status: "approved" }
+  });
+
+  const request = db.documents.get("overtimeRequests/ot1");
+  assert.equal(request.hours, 16);
+  assert.equal(request.status, "approved");
+  assert.equal(request.maxOvertimeHoursPerDay, 8);
+  assert.ok(db.documents.get("users/u1").compensatoryLeaveHours);
+});
+
 test("admin can create, update and delete a company event", async () => {
   const db = fakeFirestore({});
   const handlers = handlersFor(db, { daily: [], guard: [] });

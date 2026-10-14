@@ -154,6 +154,20 @@ test("overtime hours deduct configured lunch overlap", () => {
   );
 });
 
+test("overtime hours cap each day at eight hours and add weekend days", () => {
+  const settings = { lunchStart: "12:00", lunchEnd: "13:00" };
+  assert.equal(calculateHoursExcludingLunch(
+    new Date("2026-10-17T01:00:00Z"),
+    new Date("2026-10-18T10:00:00Z"),
+    settings
+  ), 16);
+  assert.equal(calculateHoursExcludingLunch(
+    new Date("2026-10-17T03:00:00Z"),
+    new Date("2026-10-17T06:00:00Z"),
+    settings
+  ), 2);
+});
+
 test("late ranking uses only the earliest check-in for each employee and date", () => {
   const records = [
     { id: "return", userId: "u1", date: "2026-07-13", type: "checkIn", timestamp: new Date("2026-07-13T02:59:00Z") },

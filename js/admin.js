@@ -27,6 +27,7 @@ import { callSecureFunction } from "./app.js";
 import { renderSecurityAdmin } from "./security-admin.js?v=20260724-5";
 import { correctionDisplayTime } from "./attendance-correction.js";
 import { findSpecialClosure } from "./work-schedule.js";
+import { calculateDailyOvertimeHours } from "./overtime-hours.js";
 
 const mode = document.body.dataset.adminMode;
 const titleMap = {
@@ -2248,14 +2249,11 @@ async function renderRequests(collectionName) {
         <thead><tr><th>申請人</th><th>類型</th><th>時間</th><th>時數</th>${isLeave ? "<th>職務代理人</th>" : "<th>地點</th>"}<th>原因</th><th>狀態</th><th></th></tr></thead>
         <tbody>${requests.length ? requests.map((row) => {
           const type = isLeave ? leaveTypeLabel(row.leaveType) : (row.convertToCompTime ? "加班轉補休" : "加班費");
-          const calculatedHours = isLeave ? Number(row.hours) : Math.min(
-            8,
-            calculateHoursExcludingLunch(
-              timestampToDate(row.startTime),
-              timestampToDate(row.endTime),
-              workSettings.lunchStart || "12:00",
-              workSettings.lunchEnd || "13:00"
-            )
+          const calculatedHours = isLeave ? Number(row.hours) : calculateDailyOvertimeHours(
+            timestampToDate(row.startTime),
+            timestampToDate(row.endTime),
+            workSettings.lunchStart || "12:00",
+            workSettings.lunchEnd || "13:00"
           );
           const hoursMismatch = !isLeave && Math.abs(calculatedHours - Number(row.hours)) > 0.001;
           const primaryAction = row.status === "pending"
@@ -2518,28 +2516,6 @@ async function reviewRequest(collectionName, tr, status) {
   } catch (error) {
     showToast(`審核失敗：${error.message}`, "danger");
   }
-}
-
-function calculateHoursExcludingLunch(start, end, lunchStart, lunchEnd) {
-  let lunchMilliseconds = 0;
-  const day = new Date(start);
-  day.setHours(0, 0, 0, 0);
-  const lastDay = new Date(end);
-  lastDay.setHours(0, 0, 0, 0);
-  while (day <= lastDay) {
-    const lunchFrom = new Date(day);
-    const lunchTo = new Date(day);
-    const [startHour, startMinute] = lunchStart.split(":").map(Number);
-    const [endHour, endMinute] = lunchEnd.split(":").map(Number);
-    lunchFrom.setHours(startHour, startMinute, 0, 0);
-    lunchTo.setHours(endHour, endMinute, 0, 0);
-    lunchMilliseconds += Math.max(
-      0,
-      Math.min(end.getTime(), lunchTo.getTime()) - Math.max(start.getTime(), lunchFrom.getTime())
-    );
-    day.setDate(day.getDate() + 1);
-  }
-  return Number(Math.max(0, hoursBetween(start, end) - lunchMilliseconds / 36e5).toFixed(2));
 }
 
 async function renderSettings() {

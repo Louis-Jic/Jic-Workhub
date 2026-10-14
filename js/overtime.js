@@ -6,12 +6,14 @@ import {
   serverTimestamp,
   where
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
-import { db, requireAuth, bindLogout, mountPageShell, qs, badge, fmtDateTime, getWorkSettings, hoursBetween, showToast } from "./app.js";
+import { db, requireAuth, bindLogout, mountPageShell, qs, badge, fmtDateTime, getWorkSettings, showToast } from "./app.js";
+import { calculateDailyOvertimeHours, fullDayOvertimeRangeValues } from "./overtime-hours.js";
 
 mountPageShell("加班申請", "建立加班單並選擇是否轉補休");
 const profile = await requireAuth();
 const settings = await getWorkSettings();
-const maxOvertimeHours = 8;
+const maxDailyOvertimeHours = 8;
+const assignedShift = getAssignedShift();
 bindLogout();
 
 qs("#pageContent").innerHTML = `
@@ -19,12 +21,20 @@ qs("#pageContent").innerHTML = `
     <div class="col-lg-5">
       <form class="panel p-3" id="overtimeForm">
         <h2 class="h5 mb-3">新增加班單</h2>
-        <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>
-        <div class="mb-3">
-          <label class="form-label" for="endTime">結束時間</label>
-          <input class="form-control" id="endTime" type="datetime-local" required>
-          <div class="form-text">最少加班 1 小時、單筆最多 ${maxOvertimeHours} 小時；跨過午休 ${settings.lunchStart || "12:00"}–${settings.lunchEnd || "13:00"} 會自動扣除。</div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" id="overtimeFullDay" type="checkbox" role="switch" aria-describedby="overtimeFullDayHelp">
+          <label class="form-check-label fw-semibold" for="overtimeFullDay">整天加班</label>
+          <div class="form-text" id="overtimeFullDayHelp">勾選後只需選日期，系統會依班別自動帶入 ${assignedShift.workStart}～${assignedShift.workEnd}。</div>
         </div>
+        <div id="overtimeDateTimeFields">
+          <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>
+          <div class="mb-3"><label class="form-label" for="endTime">結束時間</label><input class="form-control" id="endTime" type="datetime-local" required></div>
+        </div>
+        <div class="row g-3 mb-3" id="overtimeFullDayFields" hidden>
+          <div class="col-sm-6"><label class="form-label" for="overtimeStartDate">開始日期</label><input class="form-control" id="overtimeStartDate" type="date"></div>
+          <div class="col-sm-6"><label class="form-label" for="overtimeEndDate">結束日期</label><input class="form-control" id="overtimeEndDate" type="date"></div>
+        </div>
+        <div class="form-text mb-3">最少加班 1 小時、每天最多 ${maxDailyOvertimeHours} 小時，多天會逐日加總；跨過午休 ${settings.lunchStart || "12:00"}–${settings.lunchEnd || "13:00"} 會自動扣除。</div>
         <div class="alert alert-info py-2" id="overtimeHoursPreview">請選擇開始與結束時間。</div>
         <div class="mb-3">
           <label class="form-label" for="location">地點</label>
@@ -51,9 +61,12 @@ qs("#pageContent").innerHTML = `
 
 qs("#overtimeForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const start = new Date(qs("#startTime").value);
-  const end = new Date(qs("#endTime").value);
-  const hours = calculateOvertimeHours(start, end);
+  const { start, end } = selectedOvertimeRange();
+  const hours = calculateDailyOvertimeHours(start, end, settings.lunchStart || "12:00", settings.lunchEnd || "13:00");
+  if (!isAssignedShiftValid() && qs("#overtimeFullDay").checked) {
+    showToast("班別時間設定錯誤，請管理員修正上班與下班時間", "danger");
+    return;
+  }
   if (hours < 1) {
     showToast("加班時間最少要 1 小時", "warning");
     return;
@@ -78,6 +91,7 @@ qs("#overtimeForm").addEventListener("submit", async (event) => {
   });
   event.target.reset();
   qs("#convertToCompTime").checked = true;
+  syncOvertimeInputMode();
   showToast("加班申請已送出", "success");
   await render();
 });
@@ -97,7 +111,7 @@ async function render() {
         return `<tr>
           <td>${fmtDateTime(row.startTime)}<br><span class="muted">${fmtDateTime(row.endTime)}</span></td>
           <td>${escapeHtml(row.location || "-")}</td>
-          <td>${cappedOvertimeHours(row.hours)}</td>
+          <td>${storedOvertimeHours(row.hours)}</td>
           <td>${row.convertToCompTime ? "是" : "否"}</td>
           <td>${badge(row.status)}</td>
           <td><button class="btn btn-sm btn-outline-primary" type="button" data-print-overtime="${row.id}">列印PDF</button></td>
@@ -130,11 +144,9 @@ function openOvertimePrintView(row) {
 function overtimePrintHtml(row) {
   const start = toDate(row.startTime);
   const end = toDate(row.endTime);
-  const totalMinutes = Math.round(cappedOvertimeHours(row.hours) * 60);
-  const days = Math.floor(totalMinutes / 1440);
-  const remainingMinutes = totalMinutes % 1440;
-  const hours = Math.floor(remainingMinutes / 60);
-  const minutes = remainingMinutes % 60;
+  const totalMinutes = Math.round(storedOvertimeHours(row.hours) * 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -212,7 +224,7 @@ function overtimePrintHtml(row) {
         </tr>
         <tr>
           <td class="label" colspan="2">加班時數</td>
-          <td colspan="6" class="center hours-cell">計 ${days} 天 ${hours} 小時 ${minutes} 分</td>
+          <td colspan="6" class="center hours-cell">計 ${hours} 小時 ${minutes} 分</td>
         </tr>
         <tr>
           <td colspan="2" class="description-label">備註及工作說明</td>
@@ -278,53 +290,96 @@ function syncMinimumEndTime() {
   }
 }
 
-function calculateOvertimeHours(start, end) {
-  return Math.min(
-    maxOvertimeHours,
-    calculateHoursExcludingLunch(start, end, settings.lunchStart || "12:00", settings.lunchEnd || "13:00")
-  );
+function storedOvertimeHours(hours) {
+  const value = Number(hours);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
-function cappedOvertimeHours(hours) {
-  return Math.min(maxOvertimeHours, Math.max(0, Number(hours || 0)));
+function getAssignedShift() {
+  const shifts = Array.isArray(settings.workShifts) && settings.workShifts.length
+    ? settings.workShifts
+    : [{ id: "default", workStart: settings.workStart || "09:00", workEnd: settings.workEnd || "18:00" }];
+  return shifts.find((shift) => shift.id === profile.defaultShiftId) || shifts[0];
 }
 
-function calculateHoursExcludingLunch(start, end, lunchStart, lunchEnd) {
-  let lunchMilliseconds = 0;
-  const day = new Date(start);
-  day.setHours(0, 0, 0, 0);
-  const lastDay = new Date(end);
-  lastDay.setHours(0, 0, 0, 0);
-  while (day <= lastDay) {
-    const lunchFrom = new Date(day);
-    const lunchTo = new Date(day);
-    const [startHour, startMinute] = lunchStart.split(":").map(Number);
-    const [endHour, endMinute] = lunchEnd.split(":").map(Number);
-    lunchFrom.setHours(startHour, startMinute, 0, 0);
-    lunchTo.setHours(endHour, endMinute, 0, 0);
-    lunchMilliseconds += Math.max(
-      0,
-      Math.min(end.getTime(), lunchTo.getTime()) - Math.max(start.getTime(), lunchFrom.getTime())
-    );
-    day.setDate(day.getDate() + 1);
+function isAssignedShiftValid() {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(assignedShift.workStart || "")
+    && /^([01]\d|2[0-3]):[0-5]\d$/.test(assignedShift.workEnd || "")
+    && assignedShift.workEnd > assignedShift.workStart;
+}
+
+function selectedOvertimeRange() {
+  if (!qs("#overtimeFullDay").checked) {
+    return { start: new Date(qs("#startTime").value), end: new Date(qs("#endTime").value) };
   }
-  return Number(Math.max(0, hoursBetween(start, end) - lunchMilliseconds / 36e5).toFixed(2));
+  const range = fullDayOvertimeRangeValues({
+    startDate: qs("#overtimeStartDate").value,
+    endDate: qs("#overtimeEndDate").value,
+    workStart: assignedShift.workStart,
+    workEnd: assignedShift.workEnd
+  });
+  return { start: new Date(range?.startValue || ""), end: new Date(range?.endValue || "") };
+}
+
+function syncMinimumEndDate() {
+  const startDate = qs("#overtimeStartDate");
+  const endDate = qs("#overtimeEndDate");
+  endDate.min = startDate.value;
+  if (startDate.value && (!endDate.value || endDate.value < startDate.value)) {
+    endDate.value = startDate.value;
+  }
+}
+
+function syncOvertimeInputMode() {
+  const fullDay = qs("#overtimeFullDay").checked;
+  const startTime = qs("#startTime");
+  const endTime = qs("#endTime");
+  const startDate = qs("#overtimeStartDate");
+  const endDate = qs("#overtimeEndDate");
+
+  if (fullDay) {
+    startDate.value ||= startTime.value.slice(0, 10);
+    endDate.value ||= endTime.value.slice(0, 10) || startDate.value;
+    syncMinimumEndDate();
+  } else if (startDate.value && endDate.value && isAssignedShiftValid()) {
+    startTime.value = `${startDate.value}T${assignedShift.workStart}`;
+    endTime.value = `${endDate.value}T${assignedShift.workEnd}`;
+    syncMinimumEndTime();
+  }
+
+  qs("#overtimeDateTimeFields").hidden = fullDay;
+  qs("#overtimeFullDayFields").hidden = !fullDay;
+  startTime.required = !fullDay;
+  endTime.required = !fullDay;
+  startDate.required = fullDay;
+  endDate.required = fullDay;
+  updateHoursPreview();
 }
 
 function updateHoursPreview() {
-  const start = new Date(qs("#startTime").value);
-  const end = new Date(qs("#endTime").value);
   const preview = qs("#overtimeHoursPreview");
+  const fullDay = qs("#overtimeFullDay").checked;
+  if (fullDay && !isAssignedShiftValid()) {
+    preview.textContent = "班別時間設定錯誤，請管理員修正上班與下班時間。";
+    preview.className = "alert alert-danger py-2";
+    return;
+  }
+  const hasRange = fullDay
+    ? qs("#overtimeStartDate").value && qs("#overtimeEndDate").value
+    : qs("#startTime").value && qs("#endTime").value;
+  if (!hasRange) {
+    preview.textContent = `請選擇開始與結束${fullDay ? "日期" : "時間"}。`;
+    preview.className = "alert alert-info py-2";
+    return;
+  }
+  const { start, end } = selectedOvertimeRange();
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
     preview.textContent = "請選擇有效的開始與結束時間。";
     preview.className = "alert alert-warning py-2";
     return;
   }
-  const rawHours = calculateHoursExcludingLunch(start, end, settings.lunchStart || "12:00", settings.lunchEnd || "13:00");
-  const hours = Math.min(maxOvertimeHours, rawHours);
-  preview.textContent = rawHours > maxOvertimeHours
-    ? `預計加班時數：${hours} 小時（扣除午休後原為 ${rawHours} 小時，依單筆上限計算）`
-    : `預計加班時數：${hours} 小時（已扣除重疊的午休時間）`;
+  const hours = calculateDailyOvertimeHours(start, end, settings.lunchStart || "12:00", settings.lunchEnd || "13:00");
+  preview.textContent = `預計加班時數：${hours} 小時（${fullDay ? "整天；" : ""}已扣除午休，每天最多 ${maxDailyOvertimeHours} 小時）`;
   preview.className = hours >= 1 ? "alert alert-info py-2" : "alert alert-warning py-2";
 }
 
@@ -338,4 +393,11 @@ qs("#startTime").addEventListener("change", () => {
   updateHoursPreview();
 });
 qs("#endTime").addEventListener("change", updateHoursPreview);
+qs("#overtimeFullDay").addEventListener("change", syncOvertimeInputMode);
+qs("#overtimeStartDate").addEventListener("change", () => {
+  syncMinimumEndDate();
+  updateHoursPreview();
+});
+qs("#overtimeEndDate").addEventListener("change", updateHoursPreview);
+syncOvertimeInputMode();
 await render();
