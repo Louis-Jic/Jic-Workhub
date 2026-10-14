@@ -162,7 +162,7 @@ function overtimePrintHtml(row) {
     .description-label { text-align: center; font-weight: 700; font-size: 12pt; line-height: 1.5; }
     .description { height: 30mm; vertical-align: top; padding: 3mm 4mm; white-space: pre-wrap; }
     .method { text-align: center; font-size: 12pt; }
-    .signature { height: 19mm; text-align: center; vertical-align: bottom; padding-bottom: 3mm; }
+    .signature { text-align: center; }
     .print-actions { margin: 6mm auto 0; text-align: center; }
     .print-actions button { font: 16px "Microsoft JhengHei", sans-serif; padding: 8px 18px; }
     @media print {
