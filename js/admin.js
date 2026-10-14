@@ -663,7 +663,6 @@ function employeeEditorCard(row, users, shifts) {
             <option value="office" ${row.workMode !== "field" ? "selected" : ""}>內勤（限公司打卡據點）</option>
             <option value="field" ${row.workMode === "field" ? "selected" : ""}>外勤（不限打卡據點與時段）</option>
           </select>
-          <div class="form-text">外勤仍須 GPS 定位，但可在班別打卡時段外簽到或簽退；請停妥車輛後再操作。</div>
         </div>
       </div>
       <div class="employee-editor-section employee-editor-work">
