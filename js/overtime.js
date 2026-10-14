@@ -160,7 +160,7 @@ function overtimePrintHtml(row) {
     .period-prefix { font-weight: 700; }
     .hours-cell { font-size: 12pt; letter-spacing: .12em; }
     .description-label { text-align: center; font-weight: 700; font-size: 12pt; line-height: 1.5; }
-    .description { height: 30mm; vertical-align: top; padding: 3mm 4mm; white-space: pre-wrap; }
+    .description { height: 23mm; vertical-align: top; padding: 3mm 4mm; white-space: pre-wrap; }
     .method { text-align: center; font-size: 12pt; }
     .signature { text-align: center; }
     .print-actions { margin: 6mm auto 0; text-align: center; }
