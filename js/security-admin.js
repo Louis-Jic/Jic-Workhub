@@ -20,6 +20,34 @@ const statusLabels = {
   rejected: "已駁回",
   overdue: "原因逾期"
 };
+const ATTENDANCE_SECURITY_STATE_KEY = "jic-workhub:admin-attendance-security-view";
+const CASE_FILTERS = new Set(["attention", "waiting", "completed", "all"]);
+
+function readAttendanceSecurityState() {
+  try {
+    return JSON.parse(sessionStorage.getItem(ATTENDANCE_SECURITY_STATE_KEY) || "null") || {};
+  } catch {
+    return {};
+  }
+}
+
+function persistAttendanceSecurityState(host) {
+  if (!host) return;
+  const collapse = host.querySelector("#securityCaseCollapse");
+  const state = {
+    expanded: collapse?.classList.contains("show") || false,
+    filter: host.querySelector("[data-case-filter].is-active")?.dataset.caseFilter || "attention",
+    year: host.querySelector("[data-case-year]")?.value || "",
+    month: host.querySelector("[data-case-month]")?.value || "",
+    search: host.querySelector("[data-case-search]")?.value || "",
+    openCaseIds: [...host.querySelectorAll("[data-review-case][open]")].map((row) => row.dataset.reviewCase)
+  };
+  try {
+    sessionStorage.setItem(ATTENDANCE_SECURITY_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // Session storage may be unavailable in privacy-restricted browsers.
+  }
+}
 
 export async function renderSecurityAdmin(mode, profile, content) {
   if (mode === "attendance") await renderAttendanceSecurity(profile, content);
@@ -51,6 +79,11 @@ async function renderAttendanceSecurity(profile, content) {
   const defaultCaseMonth = cases.some((item) => String(item.date || "").startsWith(`${defaultCaseYear}-${currentMonth}`))
     ? currentMonth
     : latestDate.slice(5, 7);
+  const savedState = readAttendanceSecurityState();
+  const activeFilter = CASE_FILTERS.has(savedState.filter) ? savedState.filter : "attention";
+  const selectedYear = caseYears.includes(String(savedState.year || "")) ? String(savedState.year) : defaultCaseYear;
+  const selectedMonth = /^\d{2}$/.test(String(savedState.month || "")) ? String(savedState.month) : defaultCaseMonth;
+  const openCaseIds = new Set(Array.isArray(savedState.openCaseIds) ? savedState.openCaseIds : []);
   const host = document.createElement("div");
   host.id = "attendanceSecurityPanel";
   host.innerHTML = `
@@ -62,25 +95,25 @@ async function renderAttendanceSecurity(profile, content) {
         </div>
         <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" type="button"
           data-bs-toggle="collapse" data-bs-target="#securityCaseCollapse"
-          aria-expanded="false" aria-controls="securityCaseCollapse">
+          aria-expanded="${savedState.expanded ? "true" : "false"}" aria-controls="securityCaseCollapse">
           ${pendingReviewCount ? `<span class="badge text-bg-warning">${pendingReviewCount} 筆待審</span>` : ""}
           <span>${cases.length} 筆紀錄</span>
-          <span aria-hidden="true">展開</span>
+          <span aria-hidden="true" data-case-collapse-label>${savedState.expanded ? "收合" : "展開"}</span>
         </button>
       </div>
-      <div class="collapse" id="securityCaseCollapse">
+      <div class="collapse${savedState.expanded ? " show" : ""}" id="securityCaseCollapse">
         <div class="exception-workspace mt-3">
           <div class="exception-summary-grid">
-            <button class="exception-summary-card is-active" type="button" data-case-filter="attention">
+            <button class="exception-summary-card${activeFilter === "attention" ? " is-active" : ""}" type="button" data-case-filter="attention">
               <span>待主管處理</span><strong data-case-count="attention">${attentionCount}</strong>
             </button>
-            <button class="exception-summary-card" type="button" data-case-filter="waiting">
+            <button class="exception-summary-card${activeFilter === "waiting" ? " is-active" : ""}" type="button" data-case-filter="waiting">
               <span>待員工／逾期</span><strong data-case-count="waiting">${waitingCount}</strong>
             </button>
-            <button class="exception-summary-card" type="button" data-case-filter="completed">
+            <button class="exception-summary-card${activeFilter === "completed" ? " is-active" : ""}" type="button" data-case-filter="completed">
               <span>已完成</span><strong data-case-count="completed">${completedCount}</strong>
             </button>
-            <button class="exception-summary-card" type="button" data-case-filter="all">
+            <button class="exception-summary-card${activeFilter === "all" ? " is-active" : ""}" type="button" data-case-filter="all">
               <span>全部案件</span><strong data-case-count="all">${cases.length}</strong>
             </button>
           </div>
@@ -89,7 +122,7 @@ async function renderAttendanceSecurity(profile, content) {
               <span>年份</span>
               <select class="form-select form-select-sm" data-case-year>
                 <option value="">全部年份</option>
-                ${caseYears.map((year) => `<option value="${year}"${year === defaultCaseYear ? " selected" : ""}>${year} 年</option>`).join("")}
+                ${caseYears.map((year) => `<option value="${year}"${year === selectedYear ? " selected" : ""}>${year} 年</option>`).join("")}
               </select>
             </label>
             <label>
@@ -98,28 +131,29 @@ async function renderAttendanceSecurity(profile, content) {
                 <option value="">全年</option>
                 ${Array.from({ length: 12 }, (_, index) => {
                   const month = String(index + 1).padStart(2, "0");
-                  return `<option value="${month}"${month === defaultCaseMonth ? " selected" : ""}>${index + 1} 月</option>`;
+                  return `<option value="${month}"${month === selectedMonth ? " selected" : ""}>${index + 1} 月</option>`;
                 }).join("")}
               </select>
             </label>
             <label class="exception-search-field">
               <span>搜尋</span>
-              <input class="form-control form-control-sm" id="securityCaseSearch" type="search" placeholder="姓名、部門、日期或原因" data-case-search>
+              <input class="form-control form-control-sm" id="securityCaseSearch" type="search" placeholder="姓名、部門、日期或原因" data-case-search value="${escapeHtml(savedState.search || "")}">
             </label>
             <span class="small muted" data-case-result-count></span>
           </div>
-          <div class="exception-list" id="securityCaseList">${cases.length ? cases.slice(0, 100).map((row) => caseHtml(row, profile)).join("") : `<div class="muted">目前沒有未打卡案件</div>`}</div>
+          <div class="exception-list" id="securityCaseList">${cases.length ? cases.slice(0, 100).map((row) => caseHtml(row, profile, openCaseIds.has(row.id))).join("") : `<div class="muted">目前沒有未打卡案件</div>`}</div>
           <div class="exception-empty muted" data-case-empty hidden>目前篩選條件沒有案件。</div>
         </div>
       </div>
     </div>`;
   content.insertBefore(host, content.firstChild);
 
-  bindCaseFilters(host);
+  bindCaseFilters(host, activeFilter);
+  bindAttendanceSecurityPersistence(host);
   bindCaseReviews(host, profile);
 }
 
-function caseHtml(row, profile) {
+function caseHtml(row, profile, isOpen = false) {
   const pendingReview = row.status === "pending_manager_review";
   const correctionTime = row.requestedTime || timeMentionedInReason(row.reason) || row.workStart || "09:00";
   const group = pendingReview || row.status === "needs_more_info"
@@ -132,7 +166,7 @@ function caseHtml(row, profile) {
   const statusTone = pendingReview ? "warning"
     : row.status === "approved" ? "success"
       : ["rejected", "overdue"].includes(row.status) ? "danger" : "secondary";
-  return `<details class="exception-case" data-review-case="${escapeHtml(row.id)}"
+  return `<details class="exception-case" data-review-case="${escapeHtml(row.id)}"${isOpen ? " open" : ""}
     data-case-group="${group}" data-case-year="${escapeHtml(String(row.date || "").slice(0, 4))}"
     data-case-month="${escapeHtml(String(row.date || "").slice(5, 7))}"
     data-case-search-text="${escapeHtml(searchableText)}">
@@ -169,7 +203,7 @@ function caseHtml(row, profile) {
   </details>`;
 }
 
-function bindCaseFilters(host) {
+function bindCaseFilters(host, initialFilter = "attention") {
   const buttons = [...host.querySelectorAll("[data-case-filter]")];
   const rows = [...host.querySelectorAll("[data-review-case]")];
   const search = host.querySelector("[data-case-search]");
@@ -178,7 +212,7 @@ function bindCaseFilters(host) {
   const resultCount = host.querySelector("[data-case-result-count]");
   const empty = host.querySelector("[data-case-empty]");
   if (!buttons.length || !search || !year || !month || !resultCount || !empty) return;
-  let activeFilter = "attention";
+  let activeFilter = CASE_FILTERS.has(initialFilter) ? initialFilter : "attention";
 
   const apply = () => {
     const term = search.value.trim().toLocaleLowerCase("zh-Hant");
@@ -206,6 +240,7 @@ function bindCaseFilters(host) {
     });
     resultCount.textContent = `顯示 ${visibleCount} 筆`;
     empty.hidden = visibleCount !== 0;
+    persistAttendanceSecurityState(host);
   };
 
   buttons.forEach((button) => {
@@ -219,6 +254,22 @@ function bindCaseFilters(host) {
   year.addEventListener("change", apply);
   month.addEventListener("change", apply);
   apply();
+}
+
+function bindAttendanceSecurityPersistence(host) {
+  const collapse = host.querySelector("#securityCaseCollapse");
+  const label = host.querySelector("[data-case-collapse-label]");
+  collapse?.addEventListener("shown.bs.collapse", () => {
+    if (label) label.textContent = "收合";
+    persistAttendanceSecurityState(host);
+  });
+  collapse?.addEventListener("hidden.bs.collapse", () => {
+    if (label) label.textContent = "展開";
+    persistAttendanceSecurityState(host);
+  });
+  host.querySelectorAll("[data-review-case]").forEach((row) => {
+    row.addEventListener("toggle", () => persistAttendanceSecurityState(host));
+  });
 }
 
 function manualCorrectionHtml(row) {
@@ -252,13 +303,9 @@ function bindCaseReviews(host, profile) {
           correctionTime: card.querySelector("[data-correction-time]")?.value || ""
         });
         showToast(button.dataset.reviewDecision === "approved" ? "已核准並補回出勤表" : "審核結果已記錄", "success");
-        if (button.dataset.reviewDecision === "approved") {
-          location.reload();
-          return;
-        }
-        card.querySelector(".badge").textContent = statusLabels[button.dataset.reviewDecision] || button.dataset.reviewDecision;
-        card.querySelector(".row")?.remove();
+        persistAttendanceSecurityState(host);
         await refreshAdminPendingBadges(profile);
+        document.dispatchEvent(new CustomEvent("attendance-data-updated"));
       } catch (error) {
         showToast(error.message, "danger");
         buttons.forEach((item) => { item.disabled = false; });
@@ -278,7 +325,8 @@ function bindCaseReviews(host, profile) {
           correctionTime: repair.querySelector("input[type=time]").value
         });
         showToast("已補回出勤表並重新計算月報", "success");
-        location.reload();
+        persistAttendanceSecurityState(host);
+        document.dispatchEvent(new CustomEvent("attendance-data-updated"));
       } catch (error) {
         showToast(error.message, "danger");
         button.disabled = false;
@@ -300,7 +348,8 @@ function bindCaseReviews(host, profile) {
           exceptionId: form.closest("[data-review-case]").dataset.reviewCase
         });
         showToast("補登已建立並寫入稽核紀錄", "success");
-        form.closest("details").remove();
+        persistAttendanceSecurityState(host);
+        document.dispatchEvent(new CustomEvent("attendance-data-updated"));
       } catch (error) {
         showToast(error.message, "danger");
         button.disabled = false;

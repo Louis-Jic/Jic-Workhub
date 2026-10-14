@@ -50,6 +50,110 @@ const adminProfile = await requireAuth({ roles: ["manager", "admin"] });
 bindLogout();
 
 const content = qs("#pageContent");
+const ATTENDANCE_VIEW_STATE_KEY = "jic-workhub:admin-attendance-view";
+let attendanceScrollPersistenceBound = false;
+let attendanceRefreshPromise = null;
+
+function readAttendanceViewState() {
+  try {
+    return JSON.parse(sessionStorage.getItem(ATTENDANCE_VIEW_STATE_KEY) || "null") || {};
+  } catch {
+    return {};
+  }
+}
+
+function persistAttendanceViewState() {
+  if (mode !== "attendance") return;
+  const previous = readAttendanceViewState();
+  const valueOf = (selector, fallback = "") => qs(selector)?.value ?? fallback;
+  const openOf = (selector, fallback = false) => qs(selector)?.open ?? fallback;
+  const next = {
+    ...previous,
+    year: valueOf("#attendanceYearFilter", previous.year),
+    month: valueOf("#attendanceMonthFilter", previous.month),
+    department: valueOf("#attendanceDepartmentFilter", previous.department),
+    userId: valueOf("#attendanceUserFilter", previous.userId),
+    todayMissingOpen: openOf("#attendanceTodayMissingDetails", previous.todayMissingOpen),
+    rawDetailOpen: openOf("#attendanceRawDetails", previous.rawDetailOpen),
+    scrollY: Math.max(0, Math.round(window.scrollY || previous.scrollY || 0))
+  };
+  try {
+    sessionStorage.setItem(ATTENDANCE_VIEW_STATE_KEY, JSON.stringify(next));
+  } catch {
+    // Session storage may be unavailable in privacy-restricted browsers.
+  }
+}
+
+function selectStoredOption(select, value) {
+  if (!select || value === undefined || value === null || value === "") return false;
+  const normalized = String(value);
+  if (![...select.options].some((option) => option.value === normalized)) return false;
+  select.value = normalized;
+  return true;
+}
+
+function restoreAttendanceViewState(users, renderCurrentSelection) {
+  const state = readAttendanceViewState();
+  selectStoredOption(qs("#attendanceYearFilter"), state.year);
+  selectStoredOption(qs("#attendanceMonthFilter"), state.month);
+  if (selectStoredOption(qs("#attendanceDepartmentFilter"), state.department)) {
+    renderAttendanceUserOptions(String(state.department), users);
+    selectStoredOption(qs("#attendanceUserFilter"), state.userId);
+  }
+  renderCurrentSelection();
+
+  const todayMissing = qs("#attendanceTodayMissingDetails");
+  if (todayMissing) todayMissing.open = Boolean(state.todayMissingOpen);
+  const rawDetail = qs("#attendanceRawDetails");
+  if (rawDetail) rawDetail.open = Boolean(state.rawDetailOpen);
+
+  restoreAttendanceScrollPosition();
+}
+
+function restoreAttendanceScrollPosition() {
+  const state = readAttendanceViewState();
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: Number(state.scrollY) || 0, behavior: "auto" });
+    persistAttendanceViewState();
+  });
+}
+
+function bindAttendanceViewPersistence() {
+  ["#attendanceTodayMissingDetails", "#attendanceRawDetails"].forEach((selector) => {
+    qs(selector)?.addEventListener("toggle", persistAttendanceViewState);
+  });
+  if (attendanceScrollPersistenceBound) return;
+  attendanceScrollPersistenceBound = true;
+  window.addEventListener("scroll", persistAttendanceViewState, { passive: true });
+}
+
+async function refreshAttendancePage() {
+  if (attendanceRefreshPromise) return attendanceRefreshPromise;
+  persistAttendanceViewState();
+  attendanceRefreshPromise = (async () => {
+    await renderAttendanceReport();
+    try {
+      await renderSecurityAdmin("attendance", adminProfile, content);
+      restoreAttendanceScrollPosition();
+    } catch (error) {
+      console.error("Security admin module failed to refresh", error);
+    }
+  })();
+  try {
+    await attendanceRefreshPromise;
+  } finally {
+    attendanceRefreshPromise = null;
+  }
+}
+
+if (mode === "attendance") {
+  document.addEventListener("attendance-data-updated", () => {
+    refreshAttendancePage().catch((error) => {
+      console.error("Attendance page failed to refresh", error);
+      showToast(`出勤資料已更新，但重新載入失敗：${error.message}`, "warning");
+    });
+  });
+}
 
 let managedUsersPromise;
 
@@ -105,6 +209,7 @@ try {
 
 try {
   await renderSecurityAdmin(mode, adminProfile, content);
+  if (mode === "attendance") restoreAttendanceScrollPosition();
 } catch (error) {
   console.error("Security admin module failed to load", error);
 }
@@ -647,6 +752,7 @@ function buildDepartmentOptions(users) {
 }
 
 async function renderAttendanceReport() {
+  persistAttendanceViewState();
   const [usersSnap, attendanceSnap, leaveSnap, settings] = await Promise.all([
     getReviewerDocs("users"),
     getReviewerDocs("attendance"),
@@ -746,7 +852,7 @@ async function renderAttendanceReport() {
         <tbody id="attendanceLeaveRows"><tr><td colspan="5" class="muted">請先選擇員工</td></tr></tbody>
       </table></div>
     </div>
-    <details class="panel p-3">
+    <details class="panel p-3" id="attendanceRawDetails">
       <summary class="d-flex justify-content-between align-items-center">
         <span class="h5 mb-0">原始打卡明細（查核用）</span>
         <span class="badge text-bg-secondary" id="attendanceDetailBadge">尚未選擇員工</span>
@@ -788,10 +894,20 @@ async function renderAttendanceReport() {
   qs("#attendanceDepartmentFilter").addEventListener("change", (event) => {
     renderAttendanceUserOptions(event.target.value, users);
     renderSelectedAttendance("", usersById, allAttendanceRows, allLeaveRows, approvedLeaveRows, settings, selectedAttendancePeriod());
+    persistAttendanceViewState();
   });
-  qs("#attendanceUserFilter").addEventListener("change", renderCurrentSelection);
-  qs("#attendanceYearFilter").addEventListener("change", renderCurrentSelection);
-  qs("#attendanceMonthFilter").addEventListener("change", renderCurrentSelection);
+  qs("#attendanceUserFilter").addEventListener("change", () => {
+    renderCurrentSelection();
+    persistAttendanceViewState();
+  });
+  qs("#attendanceYearFilter").addEventListener("change", () => {
+    renderCurrentSelection();
+    persistAttendanceViewState();
+  });
+  qs("#attendanceMonthFilter").addEventListener("change", () => {
+    renderCurrentSelection();
+    persistAttendanceViewState();
+  });
   qs("#attendanceCompanyExportCsv").addEventListener("click", () => {
     downloadCompanyAttendanceWorkbook(users, allAttendanceRows, approvedLeaveRows, settings, selectedAttendancePeriod());
   });
@@ -799,6 +915,8 @@ async function renderAttendanceReport() {
     openCompanyAttendancePrintView(users, allAttendanceRows, approvedLeaveRows, settings, selectedAttendancePeriod(), true);
   });
   if (adminProfile.role === "admin") bindAttendanceDeleteForm();
+  bindAttendanceViewPersistence();
+  restoreAttendanceViewState(users, renderCurrentSelection);
 }
 
 function buildTodayMissingClockInUsers(users, attendanceRows, settings, today) {
@@ -837,7 +955,7 @@ function todayMissingAttendanceHtml(users, today, settings) {
   }
   return `
     <div class="panel p-3 mb-3">
-      <details>
+      <details id="attendanceTodayMissingDetails">
         <summary class="d-flex justify-content-between align-items-center" style="cursor:pointer">
           <div>
             <h2 class="h5 mb-1">今日尚未打卡人員</h2>
@@ -1029,7 +1147,7 @@ function bindAttendanceDeleteForm() {
       await callSecureFunction("deleteAttendanceRecord", { recordId, reason });
       bootstrap.Modal.getOrCreateInstance(qs("#deleteAttendanceModal")).hide();
       showToast("打卡紀錄已永久刪除，當日出勤已重新計算。", "success");
-      await renderAttendanceReport();
+      await refreshAttendancePage();
     } catch (error) {
       showToast(`無法刪除打卡紀錄：${error.message}`, "danger");
       submitButton.disabled = false;
@@ -2035,7 +2153,7 @@ async function createManualAttendanceRecord(dataset, usersById, settings) {
     reason: reason.trim()
   });
   showToast(`${user.name || user.email} ${date} 已補登${typeLabel}`, "success");
-  await renderAttendanceReport();
+  await refreshAttendancePage();
 }
 
 function timestampToDate(value) {
