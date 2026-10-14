@@ -440,7 +440,7 @@ body {
 
 .exception-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -614,6 +614,22 @@ body {
 
 .attendance-exception-panel {
   --attendance-accent: #2563eb;
+}
+
+#exceptionWorkspace[hidden] {
+  display: none;
+}
+
+.attendance-exception-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 24px;
+  border: 1px solid var(--jm-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgb(15 23 42 / 22%);
+}
+
+.attendance-exception-dialog::backdrop {
+  background: rgb(15 23 42 / 48%);
 }
 
 .attendance-exception-header {

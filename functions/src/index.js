@@ -3,14 +3,9 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
-const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { logger } = require("firebase-functions");
-const {
-  REGION,
-  TIME_ZONE
-} = require("./config");
 const { createSecurityRuntime } = require("./lib/security-runtime");
 const { createAdminHandlers } = require("./lib/admin-service");
+const { recentDates, selectMissingAttendanceCandidates } = require("./lib/missing-attendance");
 const {
   canPunchOutsideWindow,
   calculateWorkHours,
@@ -442,25 +437,59 @@ exports.punch = callable(async function punch(request) {
 
 exports.submitExceptionReason = callable(async function submitExceptionReason(request) {
   const employee = await profileFor(request.auth.uid);
-  const caseId = cleanText(request.data?.caseId, 128);
+  if (employee.isActive === false || employee.attendanceRequired === false) {
+    throw new HttpsError("failed-precondition", "此帳號目前不適用未打卡申請。");
+  }
+  const date = cleanText(request.data?.date, 10);
+  const caseId = `${date}_${employee.id}`;
   const category = cleanText(request.data?.category, 40);
   const reason = cleanText(request.data?.reason, 1000);
   const requestedTime = cleanText(request.data?.requestedTime, 5);
-  if (!caseId || !["forgot", "device_failure", "fieldwork", "leave_pending", "other"].includes(category)
-    || !reason || !/^\d{2}:\d{2}$/.test(requestedTime)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["forgot", "device_failure", "fieldwork", "leave_pending", "other"].includes(category)
+    || !reason || !/^([01]\d|2[0-3]):[0-5]\d$/.test(requestedTime)) {
     throw new HttpsError("invalid-argument", "請選擇原因分類，並填寫實際到達時間與說明。");
   }
   const ref = db.doc(`attendanceExceptions/${caseId}`);
   const snap = await ref.get();
-  if (!snap.exists || snap.data().userId !== employee.id) throw new HttpsError("permission-denied", "你無權處理此案件。");
-  await ref.update({
-    reasonCategory: category,
-    reason,
-    requestedTime,
-    status: "pending_manager_review",
-    submittedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-    timeline: FieldValue.arrayUnion({ action: "reason_submitted", actorId: employee.id, at: new Date().toISOString() })
+  if (snap.exists && snap.data().userId !== employee.id) throw new HttpsError("permission-denied", "你無權處理此案件。");
+  if (snap.exists && !["pending_employee_reason", "overdue", "needs_more_info"].includes(snap.data().status)) {
+    throw new HttpsError("failed-precondition", "此案件已送審或結案。");
+  }
+  const settingsSnap = await db.doc("workSettings/default").get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const shift = normalizedShift(employee, settings);
+  if (snap.data()?.status !== "needs_more_info") {
+    const candidates = await missingAttendanceCandidates(employee, settings, [date]);
+    if (!candidates.length) throw new HttpsError("failed-precondition", "該日期不符合未打卡申請條件。");
+  }
+  const now = new Date();
+  await db.runTransaction(async (transaction) => {
+    const latest = await transaction.get(ref);
+    if (latest.exists && (latest.data().userId !== employee.id
+      || !["pending_employee_reason", "overdue", "needs_more_info"].includes(latest.data().status))) {
+      throw new HttpsError("failed-precondition", "案件狀態已變更，請重新載入。");
+    }
+    transaction.set(ref, {
+      ...(latest.exists ? {} : {
+        userId: employee.id,
+        userName: employee.name || employee.email || "",
+        department: employee.department || "",
+        managerId: employee.managerId || "",
+        date,
+        shiftId: shift.id,
+        shiftName: shift.name,
+        workStart: shift.workStart,
+        dueAt: Timestamp.fromDate(new Date(taipeiDateTime(date, shift.workStart).getTime() + Number(settings.lateGraceMinutes || 0) * 60000)),
+        createdAt: FieldValue.serverTimestamp()
+      }),
+      reasonCategory: category,
+      reason,
+      requestedTime,
+      status: "pending_manager_review",
+      submittedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      timeline: FieldValue.arrayUnion({ action: "reason_submitted", actorId: employee.id, at: now.toISOString() })
+    }, { merge: true });
   });
   await audit("attendance_exception.reason_submitted", employee, { targetUserId: employee.id, department: employee.department, caseId, category });
   return { status: "pending_manager_review" };
@@ -683,69 +712,36 @@ function leaveCoversShift(leaveRows, userId, date, shift) {
     && timestampDate(leave.startTime) <= start && timestampDate(leave.endTime) >= end);
 }
 
-exports.createMissingAttendanceCases = onSchedule({
-  region: REGION,
-  schedule: "every 5 minutes",
-  timeZone: TIME_ZONE,
-  minInstances: 0,
-  memory: "256MiB",
-  timeoutSeconds: 120
-}, async () => {
+async function missingAttendanceCandidates(employee, settings, dates = recentDates(new Date())) {
   const now = new Date();
-  const date = todayKeyTaipei(now);
-  const [settingsSnap, usersSnap, attendanceSnap, leaveSnap, exceptionSnap] = await Promise.all([
-    db.doc("workSettings/default").get(),
-    db.collection("users").get(),
-    db.collection("attendance").where("date", "==", date).get(),
-    db.collection("leaveRequests").where("status", "==", "approved").get(),
-    db.collection("attendanceExceptions").get()
+  const allowedDates = new Set(recentDates(now));
+  const [attendanceSnap, leaveSnap] = await Promise.all([
+    db.collection("attendance").where("userId", "==", employee.id).get(),
+    db.collection("leaveRequests").where("userId", "==", employee.id).get()
   ]);
-  const settings = settingsSnap.exists ? settingsSnap.data() : {};
-  const users = usersSnap.docs.map((item) => ({ id: item.id, ...item.data() }))
-    .filter((user) => user.isActive !== false && user.attendanceRequired !== false);
   const attendance = attendanceSnap.docs.map((item) => item.data());
   const leaves = leaveSnap.docs.map((item) => item.data());
-  let created = 0;
-
-  for (const employee of users) {
-    if (isRestDay(date, settings)) break;
-    const shift = normalizedShift(employee, settings);
-    const dueAt = new Date(taipeiDateTime(date, shift.workStart).getTime() + Number(settings.lateGraceMinutes || 0) * 60000);
-    if (now < dueAt) continue;
-    if (attendance.some((row) => row.userId === employee.id && row.type === "checkIn")) continue;
-    if (leaveCoversShift(leaves, employee.id, date, shift)) continue;
-    const ref = db.doc(`attendanceExceptions/${date}_${employee.id}`);
-    try {
-      await ref.create({
-        userId: employee.id,
-        userName: employee.name || employee.email || "",
-        department: employee.department || "",
-        managerId: employee.managerId || "",
-        date,
-        shiftId: shift.id,
-        shiftName: shift.name,
-        workStart: shift.workStart,
-        dueAt: Timestamp.fromDate(dueAt),
-        status: "pending_employee_reason",
-        reasonCategory: "",
-        reason: "",
-        timeline: [{ action: "case_created", actorId: "system", at: now.toISOString() }],
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      });
-      created += 1;
-    } catch (error) {
-      if (error.code !== 6 && error.code !== "already-exists") throw error;
-    }
-  }
-
-  const overdueBatch = db.batch();
-  exceptionSnap.docs.forEach((item) => {
-    const row = item.data();
-    if (row.date < date && row.status === "pending_employee_reason") {
-      overdueBatch.update(item.ref, { status: "overdue", updatedAt: FieldValue.serverTimestamp() });
-    }
+  return selectMissingAttendanceCandidates({
+    dates: dates.filter((date) => allowedDates.has(date)),
+    now,
+    employee,
+    settings,
+    shift: normalizedShift(employee, settings),
+    attendance,
+    leaves,
+    leaveCoversShift
   });
-  await overdueBatch.commit();
-  logger.info("Missing attendance scan completed", { date, created, users: users.length });
+}
+
+exports.getMissingAttendanceCandidates = callable(async function getMissingAttendanceCandidates(request) {
+  const employee = await profileFor(request.auth.uid);
+  if (employee.isActive === false || employee.attendanceRequired === false) return { candidates: [] };
+  const settingsSnap = await db.doc("workSettings/default").get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const candidates = await missingAttendanceCandidates(employee, settings);
+  const existingSnap = await db.collection("attendanceExceptions").where("userId", "==", employee.id).get();
+  const formalDates = new Set(existingSnap.docs
+    .filter((item) => !["pending_employee_reason", "overdue"].includes(item.data().status))
+    .map((item) => item.data().date));
+  return { candidates: candidates.filter((item) => !formalDates.has(item.date)) };
 });

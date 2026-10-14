@@ -36,7 +36,10 @@ qs("#pageContent").innerHTML = `
   <div class="row g-3">
     <div class="col-lg-5">
       <div class="panel p-3">
-        <h2 class="h5 mb-3">今日操作</h2>
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+          <h2 class="h5 mb-0">今日操作</h2>
+          <button class="btn btn-sm btn-outline-primary" id="exceptionOpenBtn" type="button">未打卡申請與紀錄</button>
+        </div>
         <div class="alert alert-info py-2 mb-3" id="attendanceHint">正在讀取今日狀態...</div>
         <div class="mb-3">
           <label class="form-label">今日班別</label>
@@ -86,7 +89,16 @@ qs("#pageContent").innerHTML = `
       </div>
     </div>
   </div>
-  <div class="row g-3 mt-1">
+  <dialog class="attendance-exception-dialog" id="exceptionDecisionDialog" aria-labelledby="exceptionDecisionTitle">
+    <h2 class="h5" id="exceptionDecisionTitle">有未打卡日期需要確認</h2>
+    <p id="exceptionDecisionText" class="mb-3"></p>
+    <div class="d-flex flex-wrap justify-content-end gap-2">
+      <button class="btn btn-outline-secondary" id="exceptionDeclineBtn" type="button">不申請原因</button>
+      <button class="btn btn-primary" id="exceptionApplyBtn" type="button">申請原因</button>
+    </div>
+    <p class="small muted mb-0 mt-3">選擇不申請不會建立案件；日後仍可從「未打卡申請與紀錄」重新查看。</p>
+  </dialog>
+  <div class="row g-3 mt-1" id="exceptionWorkspace" hidden>
     <div class="col-12">
       <div class="panel p-3 h-100 attendance-exception-panel">
         <div class="attendance-exception-header">
@@ -94,11 +106,12 @@ qs("#pageContent").innerHTML = `
             <h2 class="h5 mb-1">未打卡處理</h2>
             <div class="small muted">填寫實際到達時間與原因後，送交主管審核。</div>
           </div>
-          <span class="attendance-exception-count" id="exceptionCount">0 筆待處理</span>
+          <div class="d-flex align-items-center gap-2"><span class="attendance-exception-count" id="exceptionCount">0 筆待處理</span>
+            <button class="btn btn-sm btn-outline-secondary" id="exceptionCloseBtn" type="button">收合</button></div>
         </div>
         <div class="attendance-exception-note">
           <span aria-hidden="true">i</span>
-          補打卡仍會保留案件與審核紀錄。
+          只有送出原因後才會建立案件與審核紀錄。
         </div>
         <div class="attendance-exception-tabs" role="tablist" aria-label="未打卡案件分類">
           <button type="button" class="is-active" data-exception-tab="action" role="tab">待處理 <span>0</span></button>
@@ -551,7 +564,7 @@ function employeeExceptionCard(row, index, editable) {
     ? "is-overdue"
     : row.status === "approved" ? "is-approved" : row.status === "rejected" ? "is-rejected" : "";
   const workStart = row.workStart || row.shiftName || "09:00";
-  return `<details class="attendance-exception-case ${statusClass}" data-case-id="${escapeHtml(row.id)}"${editable && index === 0 ? " open" : ""}>
+  return `<details class="attendance-exception-case ${statusClass}" data-case-date="${escapeHtml(row.date)}"${editable && index === 0 ? " open" : ""}>
     <summary class="attendance-exception-summary">
       <time datetime="${escapeHtml(row.date)}">${formatExceptionDate(row.date)}</time>
       <span class="attendance-exception-title">
@@ -593,16 +606,34 @@ function employeeExceptionCard(row, index, editable) {
   </details>`;
 }
 
+const dismissedStorageKey = `attendance-exception-declined:${profile.id}`;
+let initialExceptionPrompt = true;
+let latestCandidateDates = [];
+
+function dismissedDates() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(dismissedStorageKey) || "[]");
+    return new Set(Array.isArray(stored) ? stored.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)) : []);
+  } catch {
+    return new Set();
+  }
+}
+
 async function renderExceptions() {
-  const snap = await getDocs(query(
-    collection(db, "attendanceExceptions"),
-    where("userId", "==", profile.id)
-  ));
+  const [snap, candidateResult] = await Promise.all([
+    getDocs(query(collection(db, "attendanceExceptions"), where("userId", "==", profile.id))),
+    callSecureFunction("getMissingAttendanceCandidates", {})
+  ]);
   const rows = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  const openRows = rows.filter((row) => ["pending_employee_reason", "needs_more_info", "overdue"].includes(row.status));
+  const candidateRows = (candidateResult.candidates || []).map((item) => ({ ...item, status: "pending_employee_reason" }));
+  latestCandidateDates = candidateRows.map((item) => item.date);
+  const openRows = [
+    ...rows.filter((row) => row.status === "needs_more_info"),
+    ...candidateRows
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const reviewRows = rows.filter((row) => row.status === "pending_manager_review");
-  const completedRows = rows.filter((row) => !openRows.includes(row) && !reviewRows.includes(row));
+  const completedRows = rows.filter((row) => ["approved", "rejected"].includes(row.status));
   qs("#exceptionCount").textContent = `${openRows.length} 筆待處理`;
   const groups = [
     ["action", openRows, "目前沒有需要你處理的案件"],
@@ -649,12 +680,12 @@ async function renderExceptions() {
   qs("#exceptionList").querySelectorAll("[data-exception-form]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const card = form.closest("[data-case-id]");
+      const card = form.closest("[data-case-date]");
       const button = form.querySelector("button");
       button.disabled = true;
       try {
         await callSecureFunction("submitExceptionReason", {
-          caseId: card.dataset.caseId,
+          date: card.dataset.caseDate,
           category: form.elements.category.value,
           requestedTime: form.elements.requestedTime.value,
           reason: form.elements.reason.value.trim()
@@ -667,7 +698,34 @@ async function renderExceptions() {
       }
     });
   });
+
+  if (initialExceptionPrompt) {
+    initialExceptionPrompt = false;
+    const unanswered = candidateRows.filter((row) => !dismissedDates().has(row.date));
+    if (unanswered.length) {
+      qs("#exceptionDecisionText").textContent = `最近有 ${unanswered.length} 個未打卡日期。現在要申請原因並送交主管審核嗎？`;
+      qs("#exceptionDecisionDialog").showModal();
+    }
+  }
 }
+
+qs("#exceptionOpenBtn").addEventListener("click", () => { qs("#exceptionWorkspace").hidden = false; });
+qs("#exceptionCloseBtn").addEventListener("click", () => { qs("#exceptionWorkspace").hidden = true; });
+qs("#exceptionApplyBtn").addEventListener("click", () => {
+  qs("#exceptionDecisionDialog").close();
+  qs("#exceptionWorkspace").hidden = false;
+});
+qs("#exceptionDeclineBtn").addEventListener("click", () => {
+  try {
+    const keepSince = new Date(Date.now() - 31 * 86400000).toISOString().slice(0, 10);
+    const retained = [...dismissedDates()].filter((date) => date >= keepSince);
+    localStorage.setItem(dismissedStorageKey, JSON.stringify([...new Set([...retained, ...latestCandidateDates])]));
+  } catch (error) {
+    showToast(error.message, "danger");
+    return;
+  }
+  qs("#exceptionDecisionDialog").close();
+});
 
 qs("#retryLocationBtn").addEventListener("click", async () => {
   const button = qs("#retryLocationBtn");

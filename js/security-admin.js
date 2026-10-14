@@ -21,7 +21,7 @@ const statusLabels = {
   overdue: "原因逾期"
 };
 const ATTENDANCE_SECURITY_STATE_KEY = "jic-workhub:admin-attendance-security-view";
-const CASE_FILTERS = new Set(["attention", "waiting", "completed", "all"]);
+const CASE_FILTERS = new Set(["attention", "completed", "all"]);
 
 function readAttendanceSecurityState() {
   try {
@@ -63,11 +63,11 @@ function scopedQuery(name, profile, extra = null) {
 async function renderAttendanceSecurity(profile, content) {
   const casesSnap = await getDocs(scopedQuery("attendanceExceptions", profile));
   const cases = casesSnap.docs.map((item) => ({ id: item.id, ...item.data() }))
+    .filter((item) => ["pending_manager_review", "needs_more_info", "approved", "rejected"].includes(item.status))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const pendingReviewCount = cases.filter((item) => item.status === "pending_manager_review").length;
   const attentionStatuses = new Set(["pending_manager_review", "needs_more_info"]);
   const attentionCount = cases.filter((item) => attentionStatuses.has(item.status)).length;
-  const waitingCount = cases.filter((item) => ["pending_employee_reason", "overdue"].includes(item.status)).length;
   const completedCount = cases.filter((item) => ["approved", "rejected"].includes(item.status)).length;
   const caseYears = [...new Set(cases.map((item) => String(item.date || "").slice(0, 4)).filter(Boolean))]
     .sort((a, b) => b.localeCompare(a));
@@ -91,7 +91,7 @@ async function renderAttendanceSecurity(profile, content) {
       <div class="d-flex justify-content-between align-items-center gap-3">
         <div>
           <h2 class="h5 mb-1">未打卡原因與審核</h2>
-          <div class="small muted">預設收合；需要追蹤或審核時再展開。</div>
+          <div class="small muted">只顯示已提出申請的案件；舊未申請資料將另行規劃清理。</div>
         </div>
         <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" type="button"
           data-bs-toggle="collapse" data-bs-target="#securityCaseCollapse"
@@ -106,9 +106,6 @@ async function renderAttendanceSecurity(profile, content) {
           <div class="exception-summary-grid">
             <button class="exception-summary-card${activeFilter === "attention" ? " is-active" : ""}" type="button" data-case-filter="attention">
               <span>待主管處理</span><strong data-case-count="attention">${attentionCount}</strong>
-            </button>
-            <button class="exception-summary-card${activeFilter === "waiting" ? " is-active" : ""}" type="button" data-case-filter="waiting">
-              <span>待員工／逾期</span><strong data-case-count="waiting">${waitingCount}</strong>
             </button>
             <button class="exception-summary-card${activeFilter === "completed" ? " is-active" : ""}" type="button" data-case-filter="completed">
               <span>已完成</span><strong data-case-count="completed">${completedCount}</strong>
@@ -156,16 +153,14 @@ async function renderAttendanceSecurity(profile, content) {
 function caseHtml(row, profile, isOpen = false) {
   const pendingReview = row.status === "pending_manager_review";
   const correctionTime = row.requestedTime || timeMentionedInReason(row.reason) || row.workStart || "09:00";
-  const group = pendingReview || row.status === "needs_more_info"
-    ? "attention"
-    : ["pending_employee_reason", "overdue"].includes(row.status) ? "waiting" : "completed";
+  const group = pendingReview || row.status === "needs_more_info" ? "attention" : "completed";
   const searchableText = [
     row.date, row.userName, row.userId, row.department, row.shiftName, row.workStart,
     row.reason, statusLabels[row.status] || row.status
   ].filter(Boolean).join(" ").toLocaleLowerCase("zh-Hant");
   const statusTone = pendingReview ? "warning"
     : row.status === "approved" ? "success"
-      : ["rejected", "overdue"].includes(row.status) ? "danger" : "secondary";
+      : row.status === "rejected" ? "danger" : "secondary";
   return `<details class="exception-case" data-review-case="${escapeHtml(row.id)}"${isOpen ? " open" : ""}
     data-case-group="${group}" data-case-year="${escapeHtml(String(row.date || "").slice(0, 4))}"
     data-case-month="${escapeHtml(String(row.date || "").slice(5, 7))}"
