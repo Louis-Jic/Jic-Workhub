@@ -22,9 +22,8 @@ qs("#pageContent").innerHTML = `
       <form class="panel p-3" id="overtimeForm">
         <h2 class="h5 mb-3">新增加班單</h2>
         <div class="form-check form-switch mb-3">
-          <input class="form-check-input" id="overtimeFullDay" type="checkbox" role="switch" aria-describedby="overtimeFullDayHelp">
+          <input class="form-check-input" id="overtimeFullDay" type="checkbox" role="switch" checked>
           <label class="form-check-label fw-semibold" for="overtimeFullDay">整天加班</label>
-          <div class="form-text" id="overtimeFullDayHelp">勾選後只需選日期，系統會依班別自動帶入 ${assignedShift.workStart}～${assignedShift.workEnd}。</div>
         </div>
         <div id="overtimeDateTimeFields">
           <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>

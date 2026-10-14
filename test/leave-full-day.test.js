@@ -29,9 +29,10 @@ test("整天請假拒絕結束日期早於開始日期", () => {
 test("請假表單提供整天模式與獨立日期欄位", () => {
   const source = fs.readFileSync(new URL("../js/leave.js", import.meta.url), "utf8");
   const html = fs.readFileSync(new URL("../leave.html", import.meta.url), "utf8");
-  assert.match(source, /id="leaveFullDay"/);
+  assert.match(source, /id="leaveFullDay"[^>]*checked/);
+  assert.doesNotMatch(source, /leaveFullDayHelp/);
   assert.match(source, /id="leaveStartDate"/);
   assert.match(source, /id="leaveEndDate"/);
   assert.match(source, /effectiveShiftEnd\(endDate\)/);
-  assert.match(html, /leave\.js\?v=20261014-1/);
+  assert.match(html, /leave\.js\?v=20261014-2/);
 });

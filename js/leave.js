@@ -34,9 +34,8 @@ qs("#pageContent").innerHTML = `
           </select>
         </div>
         <div class="form-check form-switch mb-3">
-          <input class="form-check-input" id="leaveFullDay" type="checkbox" role="switch" aria-describedby="leaveFullDayHelp">
+          <input class="form-check-input" id="leaveFullDay" type="checkbox" role="switch" checked>
           <label class="form-check-label fw-semibold" for="leaveFullDay">整天請假</label>
-          <div class="form-text" id="leaveFullDayHelp">勾選後只需選日期，系統會依班別自動帶入 ${assignedShift.workStart}～${assignedShift.workEnd}。</div>
         </div>
         <div id="leaveDateTimeFields">
           <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { calculateDailyOvertimeHours, fullDayOvertimeRangeValues } from "../js/overtime-hours.js";
 
@@ -37,4 +38,12 @@ test("整天模式依班別建立跨日時間範圍並拒絕反向日期", () =>
     workStart: "09:00",
     workEnd: "18:00"
   }), null);
+});
+
+test("加班表單預設為整天且不顯示說明文字", () => {
+  const source = fs.readFileSync(new URL("../js/overtime.js", import.meta.url), "utf8");
+  const html = fs.readFileSync(new URL("../overtime.html", import.meta.url), "utf8");
+  assert.match(source, /id="overtimeFullDay"[^>]*checked/);
+  assert.doesNotMatch(source, /overtimeFullDayHelp/);
+  assert.match(html, /overtime\.js\?v=20261014-4/);
 });
