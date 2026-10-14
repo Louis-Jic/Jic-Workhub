@@ -26,7 +26,21 @@
           </div>
           <div class="mb-3">
             <label class="form-label" for="loginPassword">Password</label>
-            <input class="form-control" id="loginPassword" type="password" autocomplete="current-password" required>
+            <div class="password-field">
+              <input class="form-control" id="loginPassword" type="password" autocomplete="current-password" required>
+              <button class="password-toggle" id="loginPasswordToggle" type="button"
+                aria-label="顯示密碼" aria-controls="loginPassword" aria-pressed="false" title="顯示密碼">
+                <svg class="password-toggle-icon" data-password-icon="show" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.1 12s3.6-6 9.9-6 9.9 6 9.9 6-3.6 6-9.9 6-9.9-6-9.9-6Z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <svg class="password-toggle-icon d-none" data-password-icon="hide" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m3 3 18 18"></path>
+                  <path d="M10.6 6.1A10 10 0 0 1 12 6c6.3 0 9.9 6 9.9 6a17.8 17.8 0 0 1-2.2 2.8M6.7 6.7C3.7 8.5 2.1 12 2.1 12s3.6 6 9.9 6a10.3 10.3 0 0 0 4-.8"></path>
+                  <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <button class="btn btn-primary w-100">登入</button>
         </form>
@@ -34,6 +48,6 @@
     </div>
   </main>
   <div id="toastHost" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
-  <script type="module" src="js/auth.js"></script>
+  <script type="module" src="js/auth.js?v=20261014-1"></script>
 </body>
 </html>

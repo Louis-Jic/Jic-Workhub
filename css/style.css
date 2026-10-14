@@ -1070,6 +1070,51 @@ body {
   width: min(440px, 100%);
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field .form-control {
+  padding-right: 48px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  color: #64748b;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.password-toggle:focus-visible {
+  color: #1d4ed8;
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.password-toggle-icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
