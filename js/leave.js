@@ -8,6 +8,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 import { db, requireAuth, bindLogout, mountPageShell, qs, badge, fmtDateTime, hoursBetween, showToast, leaveTypes, leaveTypeLabel, getWorkSettings, timeToDate, todayKey, callSecureFunction } from "./app.js";
 import { leavePrintDocumentHtml } from "./leave-print-template.js";
+import { findSpecialClosure } from "./work-schedule.js";
+import { datePart, fullDayRangeValues } from "./leave-range.js";
 
 mountPageShell("請假申請", "建立請假單並追蹤審核狀態");
 const profile = await requireAuth();
@@ -31,12 +33,23 @@ qs("#pageContent").innerHTML = `
             ${leaveTypes.map((item) => `<option value="${item.value}">${item.label}</option>`).join("")}
           </select>
         </div>
-        <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>
-        <div class="mb-3">
-          <label class="form-label" for="endTime">結束時間</label>
-          <input class="form-control" id="endTime" type="datetime-local" step="3600" required>
-          <div class="form-text">只計算班別上班時間，會自動扣除午休、六日與系統設定休息日；請假時數必須為整數小時，每天最多 ${settings.standardHours || 8} 小時。</div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" id="leaveFullDay" type="checkbox" role="switch" aria-describedby="leaveFullDayHelp">
+          <label class="form-check-label fw-semibold" for="leaveFullDay">整天請假</label>
+          <div class="form-text" id="leaveFullDayHelp">勾選後只需選日期，系統會依班別自動帶入 ${assignedShift.workStart}～${assignedShift.workEnd}。</div>
         </div>
+        <div id="leaveDateTimeFields">
+          <div class="mb-3"><label class="form-label" for="startTime">開始時間</label><input class="form-control" id="startTime" type="datetime-local" required></div>
+          <div class="mb-3">
+            <label class="form-label" for="endTime">結束時間</label>
+            <input class="form-control" id="endTime" type="datetime-local" step="3600" required>
+          </div>
+        </div>
+        <div class="row g-3 mb-3" id="leaveFullDayFields" hidden>
+          <div class="col-sm-6"><label class="form-label" for="leaveStartDate">開始日期</label><input class="form-control" id="leaveStartDate" type="date"></div>
+          <div class="col-sm-6"><label class="form-label" for="leaveEndDate">結束日期</label><input class="form-control" id="leaveEndDate" type="date"></div>
+        </div>
+        <div class="form-text mb-3">只計算班別上班時間，會自動扣除午休、六日與系統設定休息日；請假時數必須為整數小時，每天最多 ${settings.standardHours || 8} 小時。</div>
         <div class="alert alert-secondary py-2" id="leaveHoursPreview">請選擇開始與結束時間。</div>
         <div class="mb-3">
           <label class="form-label" for="proxyUserId">職務代理人</label>
@@ -63,8 +76,7 @@ qs("#pageContent").innerHTML = `
 
 qs("#leaveForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const start = new Date(qs("#startTime").value);
-  const end = new Date(qs("#endTime").value);
+  const { start, end } = selectedLeaveRange();
   if (!assignedShiftValid) {
     showToast(`班別 ${assignedShift.name} 時間設定錯誤，請管理員修正上班/下班時間`, "danger");
     return;
@@ -113,6 +125,7 @@ qs("#leaveForm").addEventListener("submit", async (event) => {
     updatedAt: serverTimestamp()
   });
   event.target.reset();
+  syncLeaveInputMode();
   showToast("請假申請已送出", "success");
   await render();
 });
@@ -199,14 +212,82 @@ function syncMinimumEndTime() {
   }
 }
 
+function syncMinimumEndDate() {
+  const startInput = qs("#leaveStartDate");
+  const endInput = qs("#leaveEndDate");
+  endInput.min = startInput.value;
+  if (startInput.value && (!endInput.value || endInput.value < startInput.value)) {
+    endInput.value = startInput.value;
+  }
+}
+
+function effectiveShiftEnd(date) {
+  const closure = findSpecialClosure(date, settings.specialClosureDates);
+  if (!closure?.closeTime) return assignedShift.workEnd;
+  return timeToMinutes(closure.closeTime) < timeToMinutes(assignedShift.workEnd)
+    ? closure.closeTime
+    : assignedShift.workEnd;
+}
+
+function selectedLeaveRange() {
+  if (!qs("#leaveFullDay").checked) {
+    return {
+      start: new Date(qs("#startTime").value),
+      end: new Date(qs("#endTime").value)
+    };
+  }
+  const startDate = qs("#leaveStartDate").value;
+  const endDate = qs("#leaveEndDate").value;
+  const range = fullDayRangeValues({
+    startDate,
+    endDate,
+    workStart: assignedShift.workStart,
+    workEnd: effectiveShiftEnd(endDate)
+  });
+  return {
+    start: new Date(range?.startValue || ""),
+    end: new Date(range?.endValue || "")
+  };
+}
+
+function syncLeaveInputMode() {
+  const fullDay = qs("#leaveFullDay").checked;
+  const dateTimeFields = qs("#leaveDateTimeFields");
+  const fullDayFields = qs("#leaveFullDayFields");
+  const startTime = qs("#startTime");
+  const endTime = qs("#endTime");
+  const startDate = qs("#leaveStartDate");
+  const endDate = qs("#leaveEndDate");
+
+  if (fullDay) {
+    startDate.value ||= datePart(startTime.value);
+    endDate.value ||= datePart(endTime.value) || startDate.value;
+    syncMinimumEndDate();
+  } else if (startDate.value && endDate.value) {
+    startTime.value = `${startDate.value}T${assignedShift.workStart}`;
+    endTime.value = `${endDate.value}T${effectiveShiftEnd(endDate.value)}`;
+    syncMinimumEndTime();
+  }
+
+  dateTimeFields.hidden = fullDay;
+  fullDayFields.hidden = !fullDay;
+  startTime.required = !fullDay;
+  endTime.required = !fullDay;
+  startDate.required = fullDay;
+  endDate.required = fullDay;
+  updateLeaveHoursPreview();
+}
+
 function updateLeaveHoursPreview() {
-  const startInput = qs("#startTime");
-  const endInput = qs("#endTime");
   const preview = qs("#leaveHoursPreview");
-  if (!startInput.value || !endInput.value) {
+  const fullDay = qs("#leaveFullDay").checked;
+  const hasRange = fullDay
+    ? qs("#leaveStartDate").value && qs("#leaveEndDate").value
+    : qs("#startTime").value && qs("#endTime").value;
+  if (!hasRange) {
     preview.className = "alert alert-secondary py-2";
     preview.textContent = assignedShiftValid
-      ? "請選擇開始與結束時間。"
+      ? `請選擇開始與結束${fullDay ? "日期" : "時間"}。`
       : `班別 ${assignedShift.name} 時間設定錯誤：${assignedShift.workStart} - ${assignedShift.workEnd}。請管理員修正。`;
     return;
   }
@@ -215,12 +296,13 @@ function updateLeaveHoursPreview() {
     preview.textContent = `班別 ${assignedShift.name} 時間設定錯誤：下班時間必須晚於上班時間。`;
     return;
   }
-  const hours = calculateWorkingLeaveHours(new Date(startInput.value), new Date(endInput.value));
-  const skippedDays = countSkippedRestDays(new Date(startInput.value), new Date(endInput.value));
+  const { start, end } = selectedLeaveRange();
+  const hours = calculateWorkingLeaveHours(start, end);
+  const skippedDays = countSkippedRestDays(start, end);
   const wholeHour = isWholeHourValue(hours);
   preview.className = hours >= 1 && wholeHour ? "alert alert-info py-2" : "alert alert-warning py-2";
   const unitWarning = hours >= 1 && !wholeHour ? "；請假時數必須為整數小時，請調整結束時間" : "";
-  preview.textContent = `預計請假時數：${hours} 小時（班別 ${assignedShift.name}，午休 ${settings.lunchStart} - ${settings.lunchEnd}、六日/休息日已扣除${skippedDays ? `，略過 ${skippedDays} 天休息日` : ""}）${unitWarning}`;
+  preview.textContent = `預計請假時數：${hours} 小時（${fullDay ? "整天；" : ""}班別 ${assignedShift.name}，午休 ${settings.lunchStart} - ${settings.lunchEnd}、六日/休息日已扣除${skippedDays ? `，略過 ${skippedDays} 天休息日` : ""}）${unitWarning}`;
 }
 
 function calculateWorkingLeaveHours(start, end) {
@@ -238,7 +320,7 @@ function calculateWorkingLeaveHours(start, end) {
       continue;
     }
     const workStart = timeToDate(dateKey, assignedShift.workStart);
-    const workEnd = timeToDate(dateKey, assignedShift.workEnd);
+    const workEnd = timeToDate(dateKey, effectiveShiftEnd(dateKey));
     const lunchStart = timeToDate(dateKey, settings.lunchStart);
     const lunchEnd = timeToDate(dateKey, settings.lunchEnd);
 
@@ -331,5 +413,11 @@ qs("#startTime").addEventListener("change", () => {
   updateLeaveHoursPreview();
 });
 qs("#endTime").addEventListener("change", updateLeaveHoursPreview);
-updateLeaveHoursPreview();
+qs("#leaveFullDay").addEventListener("change", syncLeaveInputMode);
+qs("#leaveStartDate").addEventListener("change", () => {
+  syncMinimumEndDate();
+  updateLeaveHoursPreview();
+});
+qs("#leaveEndDate").addEventListener("change", updateLeaveHoursPreview);
+syncLeaveInputMode();
 await render();
