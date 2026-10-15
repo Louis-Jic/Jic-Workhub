@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   approvedProjectsFrom,
   assertApprovedFirebaseProject
@@ -27,8 +28,8 @@ if (!execute) {
 const only = option("--only") || positional[3];
 if (!only) throw new Error("Deployment execution requires an explicit --only resource list.");
 
-const command = process.platform === "win32" ? "firebase.cmd" : "firebase";
-const child = spawnSync(command, ["deploy", "--project", result.projectId, "--only", only], {
+const firebaseCli = fileURLToPath(new URL("../node_modules/firebase-tools/lib/bin/firebase.js", import.meta.url));
+const child = spawnSync(process.execPath, [firebaseCli, "deploy", "--project", result.projectId, "--only", only], {
   stdio: "inherit",
   env: {
     ...process.env,
